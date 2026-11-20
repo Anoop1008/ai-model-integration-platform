@@ -10,8 +10,8 @@ Phase-by-phase log of what was built and whether it was verified. Every number b
 | 3. Tests | ✅ Verified (11/11 pass) |
 | 4. Latency before/after | ✅ Verified |
 | 5. Docker | ✅ Verified |
-| 6. Git and Render | 🟡 Pushed to GitHub; Render deploy pending (user dashboard steps) |
-| 7. README and summary | 🟡 README written; live URL pending |
+| 6. Git and Render | ✅ Pushed to GitHub, live on Render |
+| 7. README and summary | ✅ Done |
 
 ---
 
@@ -30,7 +30,7 @@ Git had no identity configured. Repo-local identity is `Anoop1008` with the GitH
 **User actions needed:**
 - [x] Install Docker Desktop and WSL2.
 - [x] Run `gh auth login` (logged in as Anoop1008).
-- [ ] Create a Render account and connect it to GitHub.
+- [x] Create a Render account and deploy the Blueprint.
 
 ## Phase 1: Scaffold, data, training ✅
 
@@ -112,8 +112,19 @@ Idle memory is under ~350 MB, so Render's free 512 MB instance should fit. Headr
 - Local repo on `main` with commits per phase and tags `baseline-naive`, `optimized`.
 - `render.yaml` written.
 - Public repo created and pushed (with tags): https://github.com/Anoop1008/ai-model-integration-platform
-- Not done yet: Render deploy and live curl checks.
+- Render Blueprint deployed `churn-inference-api` (Docker, free plan) from commit `805266f`. Live URL: https://churn-inference-api.onrender.com
 
-## Phase 7: README 🟡
+Live curl checks:
+```
+GET  /health        -> HTTP 200 {"status":"ok","model_loaded":true,"model_version":"churn-tf-v1","uptime_seconds":62.26}
+POST /predict/churn -> HTTP 200 {"prediction":"Churn","confidence_score":0.8624,"churn_probability":0.8624,"risk_level":"High","inference_latency_ms":74.638,...}
+POST invalid body   -> HTTP 422 {"error":"validation_error",...}
+GET  /metrics/drift -> {"status":"insufficient_data","n_samples":1,...}
+```
+Same churn probability (0.8624) as local and Docker runs. Inference on Render's free CPU was 74.6 ms for one request (local ~5–7 ms).
 
-`README.md` written: architecture diagram, run steps, curl examples, tests, real before/after table, drift explanation, design decisions and limitations. Pending: Docker image size, container memory, live URL.
+## Phase 7: README and summary ✅
+
+`README.md` includes: live URL, architecture diagram, local run steps, curl examples, test instructions, real before/after table, drift explanation, design decisions and limitations.
+
+Not verified: Render memory usage (no metrics captured), behaviour under load on Render, and the README links rendering on GitHub.

@@ -2,6 +2,8 @@
 
 A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
 
+**Live demo:** https://churn-inference-api.onrender.com (Swagger UI at [`/docs`](https://churn-inference-api.onrender.com/docs)). Render free instance: it sleeps after inactivity, so the first request can take ~50 s.
+
 > **The data is synthetic.** `train.py` generates 2,000 telecom customer rows with a fixed seed. Churn is a noisy logistic function of the features. No real customer data is used.
 
 ## Architecture and request flow
@@ -144,6 +146,6 @@ This is a **basic indicator, not full monitoring**: numeric features only, in-me
 - **Single worker.** Each extra worker would load its own model copy, multiplying memory. Concurrency comes from the thread pool.
 - **Basic drift only.** See above.
 - **No database.** Recent predictions and the drift window live in memory and reset on restart.
-- **Not deployed on AWS.** Target is Render (Docker web service).
+- **Not deployed on AWS.** Deployed on Render's free plan (Docker web service, 512 MB, sleeps when idle). Live inference latency there was 74.6 ms for one request versus ~5–7 ms locally, because the free instance has a small CPU share.
 - **Pinned dependencies.** `preprocessor.joblib` must be loaded by the same scikit-learn version that saved it.
 - **Memory and size.** The Docker image is 2.54 GB (TensorFlow dominates). The container used 295.3 MiB at idle (`docker stats`), under Render's free 512 MB limit but with only ~200 MB headroom.
