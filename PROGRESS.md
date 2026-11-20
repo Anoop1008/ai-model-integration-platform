@@ -10,7 +10,7 @@ Phase-by-phase log of what was built and whether it was verified. Every number b
 | 3. Tests | ✅ Verified (11/11 pass) |
 | 4. Latency before/after | ✅ Verified |
 | 5. Docker | ✅ Verified |
-| 6. Git and Render | 🟡 Local git done; GitHub push and Render not started (needs approval) |
+| 6. Git and Render | 🟡 Pushed to GitHub; Render deploy pending (user dashboard steps) |
 | 7. README and summary | 🟡 README written; live URL pending |
 
 ---
@@ -25,11 +25,11 @@ Phase-by-phase log of what was built and whether it was verified. Every number b
 | WSL | Was broken (`Wsl/CallMsi/Install/REGDB_E_CLASSNOTREG`). Reinstalled `Microsoft.WSL` elevated via winget. Now WSL **3.0.5.0**, kernel 6.18.58.1-1, default version 2. |
 | GitHub CLI | Not installed. Installed with `winget install GitHub.cli`. Not logged in yet. |
 
-Git had no identity configured. Set repo-local `user.name=shukl`, `user.email=<account email>`. Change with `git config user.name "..."` if wanted.
+Git had no identity configured. Repo-local identity is `Anoop1008` with the GitHub noreply email, so no personal email is public. Commits were rewritten to this identity before the first push.
 
 **User actions needed:**
 - [x] Install Docker Desktop and WSL2.
-- [ ] Run `gh auth login` (open a new terminal first so `gh` is on PATH).
+- [x] Run `gh auth login` (logged in as Anoop1008).
 - [ ] Create a Render account and connect it to GitHub.
 
 ## Phase 1: Scaffold, data, training ✅
@@ -111,7 +111,8 @@ Idle memory is under ~350 MB, so Render's free 512 MB instance should fit. Headr
 
 - Local repo on `main` with commits per phase and tags `baseline-naive`, `optimized`.
 - `render.yaml` written.
-- Not done: GitHub repo creation, push, Render deploy, live curl checks. These need your approval and login.
+- Public repo created and pushed (with tags): https://github.com/Anoop1008/ai-model-integration-platform
+- Not done yet: Render deploy and live curl checks.
 
 ## Phase 7: README 🟡
 
