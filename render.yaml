@@ -1,0 +1,9 @@
+# Render Blueprint: one Docker web service. Render injects $PORT; the Dockerfile CMD honors it.
+services:
+  - type: web
+    name: churn-inference-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
