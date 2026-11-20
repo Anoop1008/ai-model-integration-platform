@@ -4,7 +4,7 @@ A plain-English walkthrough of this project, written so you can explain every pa
 
 ## The one-sentence pitch
 
-> A TensorFlow model that predicts whether a telecom customer will leave, served by a FastAPI service that loads the model once, keeps the server responsive under load, logs every prediction to SQL, watches for input drift, is protected by an API key and rate limiting, and runs in Docker on Render and Hugging Face.
+> A TensorFlow model that predicts whether a telecom customer will leave, served by a FastAPI service that loads the model once, keeps the server responsive under load, logs every prediction to SQL, watches for input drift, is protected by an API key and rate limiting, and runs in Docker on Render.
 
 ## Follow one request
 
@@ -77,7 +77,7 @@ A model is only right for data that looks like its training data. **PSI (Populat
 
 ### 5. Security, in layers
 
-- **Rate limit first** (`RateLimiter`): at most 60 predictions per minute per client IP (sliding window), else 429 with `Retry-After`. It runs before the key check, so it also slows anyone guessing keys. Behind Render's proxy every request comes from the proxy's IP, so uvicorn is told to trust `X-Forwarded-For` (`--forwarded-allow-ips`); otherwise all visitors would share one budget.
+- **Rate limit first** (`RateLimiter`): at most 60 predictions per minute per client IP (sliding window), else 429 with `Retry-After`. It runs before the key check, so it also slows anyone guessing keys. Behind Render's proxy the TCP peer is the proxy, so the visitor IP is read from `CF-Connecting-IP`, which Cloudflare (in front of Render) overwrites, so clients can't fake it. `X-Forwarded-For` is *not* trusted: the first version did, and a live test showed a faked header bought a fresh budget every request. Good interview story: found by testing the live site, not the laptop.
 - **API key** (`require_api_key`): when `API_KEY` is set, prediction and metrics calls need the `X-API-Key` header. Compared with `hmac.compare_digest`, which takes the same time wherever the strings differ, so the key can't be guessed one character at a time. Off on the public demo so the interviewer can click straight in; one environment variable turns it on.
 - **Input validation**: Pydantic rejects wrong types, out-of-range values and unknown fields (422).
 - **SQL injection**: every query uses `?` parameters.

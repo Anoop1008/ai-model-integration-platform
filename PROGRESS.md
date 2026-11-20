@@ -299,3 +299,10 @@ Lighthouse: mobile `/quality` and desktop `/` both 100 in all four categories. 2
 - Phone 375 px: all 6 pages via the menu, no sideways scroll. Lighthouse `/recent` mobile and desktop: all four categories 100. No console errors.
 
 **Hugging Face Space:** `scripts/deploy_hf_space.py` uploads the 25 files the image needs (no data, tests or secrets) in one commit, sets `FRAME_ANCESTORS=https://huggingface.co` (Spaces shows the app in a frame), README front matter `sdk: docker`, `app_port: 8000`. Not deployed yet: needs the user's `hf auth login`.
+
+### Deploy of c5904e8, and a rate-limit hole found live
+
+- Render: live and verified (prediction 200, `/metrics/summary` from SQLite, CSP + nosniff, 404 shape).
+- Hugging Face: `create_repo` returned `402 Payment Required`: Docker Spaces on free CPU now need a PRO subscription. Nothing was created. Decision: skip Hugging Face; `scripts/deploy_hf_space.py` removed.
+- **Rate limit did not work on Render.** 80 parallel requests from one IPv4 address in 4 s: all 200. With one fixed faked `X-Forwarded-For: 9.9.9.9`: exactly 60 × 200, then 10 × 429. So the limiter worked, but trusting `X-Forwarded-For` (`--forwarded-allow-ips '*'`) made the visitor key whatever the leftmost entry was: it varied per request on Render, and any client could fake it to get a fresh budget every request.
+- Fix: never trust `X-Forwarded-For` (flag removed from the Dockerfile). The visitor IP comes from `CLIENT_IP_HEADER` (render.yaml sets `cf-connecting-ip`: Render is behind Cloudflare, which overwrites that header), else the TCP peer. New tests: faked `X-Forwarded-For` values don't buy a fresh budget (200, 200, 429 at limit 2); with the header configured, budgets are per visitor (200, 429, 200). 28 tests pass.

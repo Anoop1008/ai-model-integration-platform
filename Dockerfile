@@ -31,7 +31,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 # sh -c expands $PORT (Render injects its own); exec makes uvicorn PID 1 so it receives SIGTERM.
 # Single worker: each worker would hold its own copy of the model in memory.
-# --forwarded-allow-ips '*': trust X-Forwarded-For so rate limiting sees each visitor, not the
-# platform proxy. Safe on Render / Hugging Face, where traffic only arrives through their proxy;
-# on a host reachable directly, list the proxy's IP instead (clients could fake the header).
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips '*'"]
+# X-Forwarded-For is deliberately not trusted (clients can fake it); the rate limiter reads the
+# visitor IP from CLIENT_IP_HEADER instead, set per platform (see render.yaml).
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

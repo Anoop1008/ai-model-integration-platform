@@ -7,3 +7,8 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     autoDeploy: true
+    envVars:
+      # Render sits behind Cloudflare, which overwrites this header with the visitor's IP,
+      # so clients cannot fake it. The rate limiter counts requests per this IP.
+      - key: CLIENT_IP_HEADER
+        value: cf-connecting-ip

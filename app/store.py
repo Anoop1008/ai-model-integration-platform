@@ -2,7 +2,7 @@
 
 SQLite ships with Python (no extra service or dependency) and is enough for one process.
 /metrics/recent, the drift window and /metrics/summary are all SQL queries over this table.
-shortcut: one file on local disk; on Render's and Hugging Face's free plans that disk is wiped
+shortcut: one file on local disk; on Render's free plan that disk is wiped
 on restart or redeploy. With several instances or durable history, point this at PostgreSQL.
 """
 

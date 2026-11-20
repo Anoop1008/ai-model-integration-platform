@@ -224,6 +224,30 @@ def test_rate_limit_returns_429(client):
         client.app.state.limiter = original
 
 
+def test_rate_limit_ignores_faked_forwarded_for(client):
+    from app.security import RateLimiter
+
+    original, client.app.state.limiter = client.app.state.limiter, RateLimiter(2)
+    try:
+        # A new fake X-Forwarded-For on every request must not buy a fresh budget.
+        codes = [client.post("/predict/churn", json=VALID, headers={"X-Forwarded-For": f"10.0.0.{i}"}).status_code for i in range(3)]
+        assert codes == [200, 200, 429]
+    finally:
+        client.app.state.limiter = original
+
+
+def test_client_ip_header_when_configured(client):
+    from app.security import RateLimiter
+
+    original, client.app.state.limiter = client.app.state.limiter, RateLimiter(1)
+    client.app.state.client_ip_header = "cf-connecting-ip"
+    try:
+        post = lambda ip: client.post("/predict/churn", json=VALID, headers={"CF-Connecting-IP": ip}).status_code  # noqa: E731
+        assert [post("1.1.1.1"), post("1.1.1.1"), post("2.2.2.2")] == [200, 429, 200]  # one budget per visitor
+    finally:
+        client.app.state.limiter, client.app.state.client_ip_header = original, None
+
+
 def test_rate_limiter_window_and_per_client():
     from app.security import RateLimiter
 

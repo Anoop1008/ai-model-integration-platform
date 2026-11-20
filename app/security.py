@@ -57,12 +57,19 @@ class RateLimiter:
             self._hits.clear()
 
 
+def client_ip(request: Request) -> str:
+    """Who the rate limit counts. X-Forwarded-For is never trusted: clients can write anything
+    into it, and trusting it let a burst bypass the limit on Render by faking the header.
+    Behind a proxy that sets its own header (Render sits behind Cloudflare, which overwrites
+    CF-Connecting-IP), name that header in CLIENT_IP_HEADER. Only do that when the app is
+    reachable solely through that proxy; otherwise clients could fake that header too."""
+    header = request.app.state.client_ip_header
+    value = request.headers.get(header, "").split(",")[0].strip() if header else ""
+    return value or (request.client.host if request.client else "unknown")
+
+
 def rate_limit(request: Request) -> None:
-    # request.client.host is the real visitor only if uvicorn trusts the platform proxy's
-    # X-Forwarded-For header (--forwarded-allow-ips in the Dockerfile); otherwise every
-    # visitor would share the proxy's address and one bucket.
-    client = request.client.host if request.client else "unknown"
-    retry_after = request.app.state.limiter.check(client)
+    retry_after = request.app.state.limiter.check(client_ip(request))
     if retry_after:
         raise HTTPException(status_code=429, detail=f"Rate limit exceeded; retry in {retry_after} s", headers={"Retry-After": str(retry_after)})
 

@@ -54,7 +54,9 @@ async def lifespan(app: FastAPI):
     app.state.store = PredictionStore(os.environ.get("DB_PATH", ROOT / "data" / "predictions.db"))
     app.state.api_key = os.environ.get("API_KEY") or None  # unset = auth off
     app.state.limiter = RateLimiter(int(os.environ.get("RATE_LIMIT_PER_MINUTE", "60")))
-    # Who may show the page in a frame: nobody by default; Hugging Face Spaces needs https://huggingface.co.
+    # Header a trusted proxy sets to the visitor's IP (Render: cf-connecting-ip). Unset = use the TCP peer.
+    app.state.client_ip_header = os.environ.get("CLIENT_IP_HEADER", "").strip().lower() or None
+    # Who may show the page in a frame (CSP frame-ancestors): nobody by default.
     app.state.csp = page_csp(os.environ.get("FRAME_ANCESTORS", "'none'"))
     yield
     app.state.store.close()
