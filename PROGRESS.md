@@ -123,8 +123,24 @@ GET  /metrics/drift -> {"status":"insufficient_data","n_samples":1,...}
 ```
 Same churn probability (0.8624) as local and Docker runs. Inference on Render's free CPU was 74.6 ms for one request (local ~5–7 ms).
 
+### Render memory and load check
+
+Render's free plan hides memory metrics ("Upgrade to any paid compute plan to view application metrics"). Fix: `/health` now returns `memory` from Linux cgroup v2 (`memory.current`, `memory.peak`) plus the process's anonymous RSS. In Docker, `cgroup_mb` matched `docker stats` (296.9 vs 296.8 MiB).
+
+Why not plain RSS: it read ~620 MB, but ~340 MB of that is TensorFlow's shared libraries mapped from disk (`RssFile`), which are reclaimable and not what the 512 MB limit counts.
+
+Live on Render (instance: 512 MB, 0.15 CPU), `benchmarks/latency_check.py --url https://churn-inference-api.onrender.com --label render-free`:
+
+| Concurrency | predict p50 | predict p95 | errors | req/s |
+|---|---|---|---|---|
+| 1 | 291.05 ms | 342.01 ms | 0 | 3.23 |
+| 10 | 320.73 ms | 489.25 ms | 0 | 24.96 |
+| 25 | 928.67 ms | 1289.83 ms | 0 | 22.86 |
+
+Memory from live `/health`: 301.0 MB idle, **304.2 MB peak** after the load. No restart (uptime kept rising). About 290 ms of each request is network round trip (`/health` alone p50 293 ms).
+
 ## Phase 7: README and summary ✅
 
 `README.md` includes: live URL, architecture diagram, local run steps, curl examples, test instructions, real before/after table, drift explanation, design decisions and limitations.
 
-Not verified: Render memory usage (no metrics captured), behaviour under load on Render, and the README links rendering on GitHub.
+Not verified: the README links rendering on GitHub, and Render behaviour beyond concurrency 25.
