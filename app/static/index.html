@@ -46,6 +46,11 @@
   .logo { width: 76px; height: 76px; border-radius: 50%; border: 3px solid var(--gold); display: flex; align-items: center; justify-content: center; background: var(--teal-dk); }
   .brand-name { font-size: 17px; font-weight: 800; letter-spacing: .04em; color: #fff; text-transform: uppercase; }
   .brand-ver { font-size: 13px; color: #C9D6D3; font-family: var(--mono); margin-top: 2px; }
+  .sidebar-menu { display: flex; flex-direction: column; gap: 24px; }
+  .menu-btn { display: none; margin-left: auto; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px;
+              border: 1px solid rgba(255,255,255,.25); background: transparent; color: #fff; }
+  .menu-btn svg.i { width: 22px; height: 22px; }
+  .menu-btn[aria-expanded="true"] .open-icon, .menu-btn[aria-expanded="false"] .close-icon { display: none; }
   .nav { display: flex; flex-direction: column; gap: 4px; }
   .nav a { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 14px; color: #E4ECEA; text-decoration: none;
            font-size: 14px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -195,16 +200,18 @@
   .chart-scroll svg { min-width: 600px; } /* below this the chart text gets too small to read; scroll instead */
   [hidden] { display: none !important; }
 
-  /* Phone: the sidebar becomes a compact header so the page content is reachable without scrolling past it. */
+  /* Phone: the sidebar becomes a compact header; its items open from a hamburger menu. */
   @media (max-width: 700px) {
-    aside { padding: 16px; gap: 14px; border-radius: 20px; }
-    .brand { flex-direction: row; padding-bottom: 14px; text-align: left; }
+    aside { padding: 14px 16px; gap: 14px; border-radius: 20px; }
+    .brand { flex-direction: row; padding-bottom: 0; border-bottom: 0; text-align: left; }
+    aside.open .brand { padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.12); }
     .logo { width: 48px; height: 48px; }
     .logo svg { width: 24px; height: 24px; }
-    .nav { flex-direction: row; overflow-x: auto; gap: 6px; scrollbar-width: none; } /* swipe; the cut-off last item shows there is more */
-    .nav a { flex: none; gap: 8px; padding: 8px 12px; font-size: 12px; }
+    .menu-btn { display: inline-flex; }
+    .sidebar-menu { display: none; gap: 14px; }
+    aside.open .sidebar-menu { display: flex; }
+    .nav a { padding: 12px 14px; }
     .nav a[aria-current="page"] { margin-right: 0; border-radius: 12px; }
-    .nav svg.i { width: 16px; height: 16px; }
     .dots { display: none; }
     .stat { min-height: 0; padding: 18px 20px; }
     h1 { font-size: 24px; }
@@ -231,8 +238,14 @@
         <div class="brand-name">Churn Inference</div>
         <div class="brand-ver" data-version>…</div>
       </div>
+      <!-- Phones only: the sidebar collapses behind this button. -->
+      <button class="btn menu-btn" type="button" id="menu-btn" aria-expanded="false" aria-controls="sidebar-menu" aria-label="Open menu">
+        <svg class="i open-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg class="i close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
     </div>
 
+    <div class="sidebar-menu" id="sidebar-menu">
     <nav class="nav" aria-label="Main">
       <a href="/" data-route><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
       <a href="/predict" data-route><svg class="i" aria-hidden="true"><use href="#i-target"/></svg>Predict</a>
@@ -255,6 +268,7 @@
 
     <div class="dots" aria-hidden="true">
       <svg width="100%" height="92" viewBox="0 0 216 92" fill="none" style="position:absolute;inset:0"><path d="M24 70 C60 10, 110 10, 140 52" stroke="#D9AE3A" stroke-width="1.5" stroke-dasharray="3 4"/><path d="M70 64 C110 20, 170 18, 196 40" stroke="#D9AE3A" stroke-width="1.5" stroke-dasharray="3 4"/><circle cx="24" cy="70" r="3.5" fill="#D9AE3A"/><circle cx="140" cy="52" r="3.5" fill="#D9AE3A"/><circle cx="196" cy="40" r="3.5" fill="#D9AE3A"/><circle cx="70" cy="64" r="3.5" fill="#D9AE3A"/></svg>
+    </div>
     </div>
   </aside>
 
@@ -607,9 +621,7 @@ function route(focus) {
   view = name;
   document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = s.dataset.view !== name));
   document.querySelectorAll(".nav a").forEach((a) => (a.getAttribute("href") === path ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-  // On phones the nav is a sideways-scrolling row: keep the current page's item visible.
-  const nav = document.querySelector(".nav"), current = nav.querySelector('[aria-current="page"]');
-  if (nav.scrollWidth > nav.clientWidth) nav.scrollLeft = current.offsetLeft - nav.offsetLeft - 8;
+  setMenu(false); // phones: picking a page closes the menu
   $("page-title").textContent = title;
   $("page-lede").textContent = lede;
   document.title = path === "/" ? "Churn Predictor" : `${title} · Churn Predictor`;
@@ -1004,6 +1016,17 @@ function renderCut(cal, id) {
   $("cut-note").textContent = `Flags ${pct1(c.predicted_churn_rate)} of customers (${pct1(cal.holdout_actual_churn_rate)} actually leave). `
     + `${pct1(c.precision_churn)} of flagged customers really churn, and ${pct1(c.recall_churn)} of churners are caught.`;
 }
+
+/* ---------- phone menu ---------- */
+function setMenu(open) {
+  document.querySelector("aside").classList.toggle("open", open);
+  $("menu-btn").setAttribute("aria-expanded", String(open));
+  $("menu-btn").setAttribute("aria-label", open ? "Close menu" : "Open menu");
+}
+$("menu-btn").addEventListener("click", () => setMenu($("menu-btn").getAttribute("aria-expanded") !== "true"));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("menu-btn").getAttribute("aria-expanded") === "true") { setMenu(false); $("menu-btn").focus(); }
+});
 
 /* ---------- wiring ---------- */
 const presetButtons = document.querySelectorAll("[data-preset]");

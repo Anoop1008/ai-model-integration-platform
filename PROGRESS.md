@@ -222,3 +222,21 @@ Checked locally (1440 px, Chrome): high-risk example gives 86.2% / Likely to chu
 - Dashboard: model version, cut-off, ROC-AUC, uptime, recent count, live drift status, p50 latency, each tile linking to its page. Drift page shows an honest empty state (0 of 50 requests) with a link to Predict instead of borrowed numbers.
 - Fixed while checking: accuracy showed 0.782 (`toFixed(3)` on 0.7825), now 4 decimals as stored; full-width cards were stretched tall; memory value wrapped; active nav item hidden on phones.
 - Checked in Chrome: every sidebar link, Back, every dashboard tile, the drift "Make a prediction" link, both cut-off tabs, Refresh (picks up a prediction made elsewhere), a real prediction, live drift after 55 requests. No page scrolls sideways at 375 px. Lighthouse 100 in all four categories (mobile /quality, desktop /performance). No console messages. Docker: `/metrics/evaluation` has all six result sections, all six routes 200. 20/20 tests pass. Works: yes.
+
+### Live phone-width check (Render, after commit bf3e5bc)
+
+Checked https://churn-inference-api.onrender.com at 375 px (Chrome device emulation, mobile + touch):
+
+- All 6 pages (`/`, `/predict`, `/recent`, `/drift`, `/performance`, `/quality`): page width 375 px (no sideways scroll), 0 elements past the screen edge, the active nav item visible, the right section shown.
+- Predict: 86.2%, Likely to churn, High risk; result card fits the screen.
+- Performance: latency bars, throughput chart and all 6 Render load-test rows loaded from `/metrics/evaluation`. The chart and table are wider than a phone and scroll sideways inside their cards, by design.
+- Lighthouse mobile on live `/performance`: Accessibility, Best Practices, SEO, Agentic all 100.
+- Seen, not a bug: the service was asleep (free plan, 15 idle minutes), so the first visit showed Render's "Application loading" page. After waking, a page shows "Checking…" and empty charts for about 2 s until the API answers.
+- Right after waking, Render's container total read 511.8 MB while the app's own memory was 278.6 MB: the same reclaimable file cache seen in local Docker. The page leads with the app's own number.
+
+### Hamburger menu on phones
+
+- At 700 px and below the sidebar collapses to a header (logo, name, version, ☰ button). ☰ opens all sidebar items (Dashboard, Predict, Recent, Drift, Performance, Model quality, API docs) plus the service-health panel; the icon turns into ✕.
+- Closes when a page is picked, on Escape (focus returns to the button), or on ✕. The button has `aria-expanded`, `aria-controls` and an "Open menu"/"Close menu" label.
+- Replaces the earlier sideways-scrolling nav row. Desktop is unchanged: no button, full sidebar.
+- Checked locally at 375 px: menu shows all 7 items; each page picked from the menu opens the right section and closes the menu; Escape and ✕ close it; no sideways scroll. Lighthouse mobile: all four categories 100. Desktop (1536 px): button hidden, 7 nav items and health panel visible. 20/20 tests pass. Works: yes.
