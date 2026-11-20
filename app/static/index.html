@@ -7,7 +7,9 @@
 <meta name="description" content="Predict telecom customer churn with a TensorFlow model served by FastAPI.">
 <link rel="icon" href="data:,">
 <link rel="preload" href="/static/fonts/nunito-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-<!-- Plain HTML/CSS/JS served by FastAPI itself: same origin as the API, so no CORS and no build step. -->
+<!-- Plain HTML/CSS/JS served by FastAPI itself: same origin as the API, so no CORS and no build step.
+     Every page route (/, /predict, /recent, /drift, /performance, /quality) serves this file; the script
+     shows the matching section. Every number on every page comes from the API, none is typed in here. -->
 <style>
   /* Self-hosted variable fonts (Latin subset, OFL: see /static/fonts/LICENSE.txt). One file covers every weight. */
   @font-face { font-family: "Nunito Sans"; font-style: normal; font-weight: 200 1000; font-display: swap; src: url("/static/fonts/nunito-sans-latin.woff2") format("woff2"); }
@@ -22,15 +24,17 @@
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Nunito Sans", ui-sans-serif, system-ui, sans-serif; }
   a { color: #2F4744; }
   h1, h2, p { margin: 0; }
+  h1:focus { outline: none; }
   .page { min-height: 100vh; padding: 28px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; max-width: 1600px; margin: 0 auto; }
   @media (max-width: 600px) { .page { padding: 16px; } }
   .mono { font-family: var(--mono); }
   .btn { cursor: pointer; transition: background-color .15s, border-color .15s, color .15s; }
   .btn:hover { filter: brightness(.96); }
-  .btn:focus-visible, input:focus-visible, select:focus-visible, .nav a:focus-visible { outline: 2px solid #C79A22; outline-offset: 2px; }
+  .btn:focus-visible, input:focus-visible, select:focus-visible, .nav a:focus-visible, a.tile:focus-visible { outline: 2px solid #C79A22; outline-offset: 2px; }
   .btn:disabled { opacity: .6; cursor: progress; }
   .ghost { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--field);
            background: #fff; color: var(--ink); font: inherit; font-size: 14px; font-weight: 700; text-decoration: none; }
+  .ghost.sm { height: 36px; padding: 0 14px; font-size: 13px; }
   .solid { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; border: 0;
            background: var(--teal); color: #fff; font: inherit; font-size: 14px; font-weight: 700; text-decoration: none; }
   svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -46,7 +50,7 @@
   .nav a { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 14px; color: #E4ECEA; text-decoration: none;
            font-size: 14px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
   .nav a:hover { background: rgba(255,255,255,.08); }
-  .nav a[aria-current="true"] { margin-right: -16px; border-radius: 14px 0 0 14px; background: var(--bg); color: #2F4744; font-weight: 800; }
+  .nav a[aria-current="page"] { margin-right: -16px; border-radius: 14px 0 0 14px; background: var(--bg); color: #2F4744; font-weight: 800; }
   .nav svg.i { width: 20px; height: 20px; }
   .health { display: flex; flex-direction: column; gap: 14px; padding: 18px 16px; border-radius: 16px; background: var(--teal-dk); }
   .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #E9C766; }
@@ -55,8 +59,8 @@
   .led.ok { background: #6FD39B; box-shadow: 0 0 0 4px rgba(111,211,155,.2); }
   .led.bad { background: #F08A80; box-shadow: 0 0 0 4px rgba(240,138,128,.2); }
   .mem { display: flex; flex-direction: column; gap: 6px; }
-  .mem-row { display: flex; justify-content: space-between; font-size: 13px; color: #C9D6D3; }
-  .mem-row strong { color: #fff; }
+  .mem-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: #C9D6D3; }
+  .mem-row strong { color: #fff; white-space: nowrap; }
   .meter { height: 8px; border-radius: 999px; background: rgba(255,255,255,.14); overflow: hidden; }
   .meter > div { height: 100%; width: 0; background: var(--gold); border-radius: 999px; transition: width .3s; }
   .small-note { font-size: 12px; color: #C9D6D3; }
@@ -64,6 +68,8 @@
 
   /* content */
   main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+  .view { display: flex; flex-direction: column; gap: 20px; }
+  .view > .card { flex: none; } /* full-width cards: the 300px flex-basis is for cards side by side in a .row */
   .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 4px 0; }
   h1 { font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
   .lede { margin-top: 4px; font-size: 14px; color: var(--sub); }
@@ -87,6 +93,12 @@
           display: flex; flex-direction: column; gap: 16px; box-shadow: 0 1px 2px rgba(30,43,41,.04); }
   .card.wide { flex: 2 1 560px; }
   .card.narrow { flex-basis: 320px; }
+  .tile { flex: 1 1 200px; color: inherit; text-decoration: none; gap: 6px; }
+  a.tile:hover { border-color: #B9CAC6; }
+  .tile-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+  .tile-value { font-size: 26px; font-weight: 800; letter-spacing: -.01em; }
+  .tile-note { font-size: 12px; color: var(--muted); }
+  .tile-link { margin-top: auto; padding-top: 6px; font-size: 13px; font-weight: 700; color: #2F4744; }
   h2 { font-size: 18px; font-weight: 800; }
   .hint { margin-top: 4px; font-size: 13px; color: var(--muted); }
   .head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -110,6 +122,7 @@
   .High, .significant { background: #FBE9E7; color: #A4302A; }
   .Medium, .moderate { background: #FBF1D9; color: #7D5600; }
   .Low, .stable { background: #E6F3EB; color: #23683F; }
+  .neutral { background: var(--soft); color: var(--ink2); }
   #result { display: flex; flex-direction: column; gap: 16px; }
   .gauge { position: relative; width: 184px; height: 184px; align-self: center; }
   .gauge-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -122,6 +135,7 @@
   .sw.line { width: 14px; height: 3px; border-radius: 2px; }
   .verdict { text-align: center; font-size: 22px; font-weight: 800; }
   dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; border-top: 1px solid var(--line2); padding-top: 14px; }
+  dl.plain { border-top: 0; padding-top: 0; font-size: 14px; gap: 10px 16px; }
   dt { color: var(--muted); } dd { margin: 0; text-align: right; font-weight: 700; overflow-wrap: anywhere; }
   dd.rid { font-weight: 400; color: var(--ink2); }
   .alert { display: flex; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid #F1C6C1; background: #FDF1EF; color: #8E2A24; font-size: 13px; }
@@ -132,6 +146,8 @@
   .empty-icon { width: 52px; height: 52px; border-radius: 50%; background: var(--soft); display: flex; align-items: center; justify-content: center; color: var(--teal); }
   .empty-icon svg.i { width: 24px; height: 24px; }
   .empty strong { color: var(--ink); }
+  .empty .progress { width: min(260px, 100%); height: 8px; border-radius: 999px; background: var(--soft); overflow: hidden; }
+  .empty .progress div { height: 100%; background: var(--teal); border-radius: 999px; }
   .bars { flex: 1; min-height: 200px; display: flex; align-items: stretch; gap: 8px; border-bottom: 1px solid var(--line2); padding-top: 8px; }
   .bars > div { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 6px; }
   .bars .col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 170px; font-size: 11px; font-weight: 700; color: var(--ink2); }
@@ -142,6 +158,7 @@
   .tip svg { margin-top: 2px; }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 640px; }
+  table.compact { min-width: 520px; }
   th { text-align: left; padding: 10px; color: var(--muted); font-weight: 700; border-bottom: 1px solid var(--line2); }
   td { padding: 12px 10px; border-bottom: 1px solid var(--soft); }
   tbody tr:hover { background: #F5F8F7; }
@@ -176,24 +193,24 @@
   .footer { padding: 0 4px; font-size: 12px; color: var(--sub); }
   .chart-scroll { overflow-x: auto; }
   .chart-scroll svg { min-width: 600px; } /* below this the chart text gets too small to read; scroll instead */
+  [hidden] { display: none !important; }
 
-  /* Phone: the sidebar becomes a compact header so the form is reachable without scrolling past it. */
+  /* Phone: the sidebar becomes a compact header so the page content is reachable without scrolling past it. */
   @media (max-width: 700px) {
     aside { padding: 16px; gap: 14px; border-radius: 20px; }
     .brand { flex-direction: row; padding-bottom: 14px; text-align: left; }
     .logo { width: 48px; height: 48px; }
     .logo svg { width: 24px; height: 24px; }
     .nav { flex-direction: row; overflow-x: auto; gap: 6px; scrollbar-width: none; } /* swipe; the cut-off last item shows there is more */
-    .stat { min-height: 0; padding: 18px 20px; }
     .nav a { flex: none; gap: 8px; padding: 8px 12px; font-size: 12px; }
-    .nav a[aria-current="true"] { margin-right: 0; border-radius: 12px; }
+    .nav a[aria-current="page"] { margin-right: 0; border-radius: 12px; }
     .nav svg.i { width: 16px; height: 16px; }
     .dots { display: none; }
+    .stat { min-height: 0; padding: 18px 20px; }
     h1 { font-size: 24px; }
     .stat-big { font-size: 28px; }
     .card { padding: 18px; }
   }
-  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -201,6 +218,7 @@
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
   <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
   <symbol id="i-bolt" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
 </svg>
 <div class="page">
 
@@ -216,12 +234,12 @@
     </div>
 
     <nav class="nav" aria-label="Main">
-      <a href="#dashboard" aria-current="true"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
-      <a href="#predict"><svg class="i" aria-hidden="true"><use href="#i-target"/></svg>Predict</a>
-      <a href="#recent"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>Recent</a>
-      <a href="#drift"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Drift</a>
-      <a href="#performance"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="10" y1="2" x2="14" y2="2"/><line x1="12" y1="14" x2="15" y2="11"/><circle cx="12" cy="14" r="8"/></svg>Performance</a>
-      <a href="#quality"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Model quality</a>
+      <a href="/" data-route><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
+      <a href="/predict" data-route><svg class="i" aria-hidden="true"><use href="#i-target"/></svg>Predict</a>
+      <a href="/recent" data-route><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>Recent</a>
+      <a href="/drift" data-route><svg class="i" aria-hidden="true"><use href="#i-pulse"/></svg>Drift</a>
+      <a href="/performance" data-route><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="10" y1="2" x2="14" y2="2"/><line x1="12" y1="14" x2="15" y2="11"/><circle cx="12" cy="14" r="8"/></svg>Performance</a>
+      <a href="/quality" data-route><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Model quality</a>
       <a href="/docs"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>API docs</a>
     </nav>
 
@@ -229,9 +247,9 @@
       <div class="eyebrow">Service health</div>
       <div class="h-status"><span class="led" id="side-led"></span><span id="side-status">Checking…</span></div>
       <div class="mem">
-        <div class="mem-row"><span id="mem-label">Container memory</span><strong id="mem-text">–</strong></div>
+        <div class="mem-row"><span id="mem-label">App memory</span><strong id="mem-text">–</strong></div>
         <div class="meter" role="progressbar" aria-label="App memory used of 512 MB" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="mem-meter"><div></div></div>
-        <div class="small-note" id="mem-note">Render free plan limit: 512 MB</div>
+        <div class="small-note" id="mem-note">Loading…</div>
       </div>
     </div>
 
@@ -240,11 +258,11 @@
     </div>
   </aside>
 
-  <main id="dashboard">
+  <main>
     <header class="top">
       <div>
-        <h1>Customer Churn Predictor</h1>
-        <p class="lede">TensorFlow model behind a FastAPI inference pipeline. Trained on synthetic data.</p>
+        <h1 id="page-title" tabindex="-1">Customer Churn Predictor</h1>
+        <p class="lede" id="page-lede"></p>
       </div>
       <div class="actions">
         <span class="pill" role="status"><span class="led" id="pill-led"></span><span id="pill-text">Checking API…</span></span>
@@ -253,126 +271,138 @@
       </div>
     </header>
 
-    <section class="row" aria-label="Model summary">
-      <div class="stat s-gold">
-        <svg class="deco" aria-hidden="true" width="190" height="128" viewBox="0 0 190 128" fill="none" style="right:-10px"><path d="M10 110 C60 20, 140 10, 185 60" stroke="#2A2410" stroke-opacity=".25" stroke-width="1.5" stroke-dasharray="4 5"/><path d="M40 128 C90 60, 150 60, 190 100" stroke="#2A2410" stroke-opacity=".18" stroke-width="1.5" stroke-dasharray="4 5"/></svg>
-        <div class="stat-label">Model version</div>
-        <div class="stat-big mono" style="font-size:26px" data-version>…</div>
-        <div class="stat-note" style="color:#3D3417">Loaded once at startup · warm-up run</div>
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view" data-view="dashboard" aria-label="Dashboard" hidden>
+      <div class="row">
+        <div class="stat s-gold">
+          <svg class="deco" aria-hidden="true" width="190" height="128" viewBox="0 0 190 128" fill="none" style="right:-10px"><path d="M10 110 C60 20, 140 10, 185 60" stroke="#2A2410" stroke-opacity=".25" stroke-width="1.5" stroke-dasharray="4 5"/><path d="M40 128 C90 60, 150 60, 190 100" stroke="#2A2410" stroke-opacity=".18" stroke-width="1.5" stroke-dasharray="4 5"/></svg>
+          <div class="stat-label">Model version</div>
+          <div class="stat-big mono" style="font-size:26px" data-version>…</div>
+          <div class="stat-note" style="color:#3D3417">Loaded once at startup · warm-up run</div>
+        </div>
+        <div class="stat s-teal">
+          <svg class="deco" aria-hidden="true" width="200" height="128" viewBox="0 0 200 128" fill="none" style="right:0"><path d="M20 120 C70 30, 150 20, 196 70" stroke="#FFFFFF" stroke-opacity=".22" stroke-width="1.5" stroke-dasharray="4 5"/><circle cx="196" cy="70" r="4" fill="#D9AE3A"/></svg>
+          <div class="stat-label">Churn cut-off</div>
+          <div class="stat-big" id="cutoff">…</div>
+          <div class="stat-note" id="cutoff-note"></div>
+        </div>
+        <div class="stat s-dark">
+          <div class="stat-label">Test ROC-AUC</div>
+          <div class="stat-big" id="auc">…</div>
+          <div class="stat-note" id="auc-note"></div>
+        </div>
       </div>
-      <div class="stat s-teal">
-        <svg class="deco" aria-hidden="true" width="200" height="128" viewBox="0 0 200 128" fill="none" style="right:0"><path d="M20 120 C70 30, 150 20, 196 70" stroke="#FFFFFF" stroke-opacity=".22" stroke-width="1.5" stroke-dasharray="4 5"/><circle cx="196" cy="70" r="4" fill="#D9AE3A"/></svg>
-        <div class="stat-label">Churn cut-off</div>
-        <div style="display:flex;align-items:baseline;gap:10px"><span class="stat-big" id="cutoff">…</span><span style="font-size:13px;font-weight:700;color:#F2D27A">was 0.5</span></div>
-        <div class="stat-note">Tuned for accuracy on IBM Telco holdout</div>
-      </div>
-      <div class="stat s-dark">
-        <!-- shortcut: copied from artifacts/training_stats.json; serve via /health if the model gets retrained often. -->
-        <div class="stat-label">Test ROC-AUC</div>
-        <div class="stat-big">0.855</div>
-        <div class="stat-note">Accuracy 0.783 · 400 test rows</div>
+      <div class="row">
+        <div class="card tile">
+          <span class="tile-label">Uptime</span>
+          <span class="tile-value" id="tile-uptime">…</span>
+          <span class="tile-note">Since the last restart. Render's free plan sleeps after 15 idle minutes.</span>
+        </div>
+        <a class="card tile" href="/recent" data-route>
+          <span class="tile-label">Recent predictions</span>
+          <span class="tile-value" id="tile-recent">…</span>
+          <span class="tile-note" id="tile-recent-note"></span>
+          <span class="tile-link">View recent →</span>
+        </a>
+        <a class="card tile" href="/drift" data-route>
+          <span class="tile-label">Live input drift</span>
+          <span class="tile-value" id="tile-drift">…</span>
+          <span class="tile-note" id="tile-drift-note"></span>
+          <span class="tile-link">View drift →</span>
+        </a>
+        <a class="card tile" href="/performance" data-route>
+          <span class="tile-label">Predict latency, p50</span>
+          <span class="tile-value" id="tile-latency">…</span>
+          <span class="tile-note" id="tile-latency-note"></span>
+          <span class="tile-link">View performance →</span>
+        </a>
       </div>
     </section>
 
-    <section class="row">
-      <div class="card narrow" id="predict">
-        <div>
-          <h2>Customer details</h2>
-          <p class="hint">Checked by the API (Pydantic) before scoring.</p>
-        </div>
-        <div class="seg" role="group" aria-label="Example customers">
-          <button class="btn" type="button" data-preset="risky" aria-pressed="true">High-risk example</button>
-          <button class="btn" type="button" data-preset="loyal" aria-pressed="false">Loyal example</button>
-        </div>
-        <!-- novalidate: let the API's 422 errors show, which is what this demo is about. -->
-        <form id="form" novalidate>
-          <div class="fields">
-            <div class="field"><label for="tenure_months">Tenure (months)</label><input id="tenure_months" type="number" step="1" min="0" max="120" value="5"><small>0–120</small></div>
-            <div class="field"><label for="support_tickets">Support tickets</label><input id="support_tickets" type="number" step="1" min="0" max="50" value="4"><small>0–50</small></div>
-            <div class="field"><label for="monthly_charges">Monthly charges ($)</label><input id="monthly_charges" type="number" step="0.01" min="0" max="500" value="95.5"><small>Up to 500</small></div>
-            <div class="field"><label for="total_charges">Total charges ($)</label><input id="total_charges" type="number" step="0.01" min="0" value="477.5"><small>0 or more</small></div>
+    <!-- ============ PREDICT ============ -->
+    <section class="view" data-view="predict" aria-label="Predict" hidden>
+      <div class="row">
+        <div class="card narrow">
+          <div>
+            <h2>Customer details</h2>
+            <p class="hint">Checked by the API (Pydantic) before scoring.</p>
           </div>
-          <div class="field">
-            <label for="contract_type">Contract</label>
-            <div class="select-wrap">
-              <select id="contract_type">
-                <option value="month-to-month" selected>Month-to-month</option>
-                <option value="one-year">One year</option>
-                <option value="two-year">Two year</option>
-              </select>
-              <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          <div class="seg" role="group" aria-label="Example customers">
+            <button class="btn" type="button" data-preset="risky" aria-pressed="true">High-risk example</button>
+            <button class="btn" type="button" data-preset="loyal" aria-pressed="false">Loyal example</button>
+          </div>
+          <!-- novalidate: let the API's 422 errors show, which is what this demo is about. -->
+          <form id="form" novalidate>
+            <div class="fields">
+              <div class="field"><label for="tenure_months">Tenure (months)</label><input id="tenure_months" type="number" step="1" min="0" max="120" value="5"><small>0–120</small></div>
+              <div class="field"><label for="support_tickets">Support tickets</label><input id="support_tickets" type="number" step="1" min="0" max="50" value="4"><small>0–50</small></div>
+              <div class="field"><label for="monthly_charges">Monthly charges ($)</label><input id="monthly_charges" type="number" step="0.01" min="0" max="500" value="95.5"><small>Up to 500</small></div>
+              <div class="field"><label for="total_charges">Total charges ($)</label><input id="total_charges" type="number" step="0.01" min="0" value="477.5"><small>0 or more</small></div>
             </div>
+            <div class="field">
+              <label for="contract_type">Contract</label>
+              <div class="select-wrap">
+                <select id="contract_type">
+                  <option value="month-to-month" selected>Month-to-month</option>
+                  <option value="one-year">One year</option>
+                  <option value="two-year">Two year</option>
+                </select>
+                <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </div>
+            <button class="btn solid go" type="submit" id="submit"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg><span>Predict churn</span></button>
+          </form>
+        </div>
+
+        <div class="card" aria-live="polite">
+          <div class="head" style="align-items:center">
+            <h2>Prediction</h2>
+            <span class="badge" id="r-risk" hidden></span>
           </div>
-          <button class="btn solid go" type="submit" id="submit"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg><span>Predict churn</span></button>
-        </form>
-      </div>
 
-      <div class="card" aria-live="polite">
-        <div class="head" style="align-items:center">
-          <h2>Prediction</h2>
-          <span class="badge" id="r-risk" hidden></span>
-        </div>
-
-        <div id="result" hidden>
-          <div class="gauge">
-            <svg width="184" height="184" viewBox="0 0 184 184" role="img" id="gauge">
-              <circle cx="92" cy="92" r="70" fill="none" stroke="#E7EFED" stroke-width="20"/>
-              <circle cx="92" cy="92" r="70" fill="none" stroke="#3E5754" stroke-width="20" stroke-dasharray="0 439.82" transform="rotate(-90 92 92)" id="gauge-arc"/>
-              <circle cx="92" cy="22" r="7" fill="#D9AE3A" stroke="#FFFFFF" stroke-width="3" id="gauge-cut"/>
-            </svg>
-            <div class="gauge-text"><strong id="r-prob">–</strong><span>churn probability</span></div>
+          <div id="result" hidden>
+            <div class="gauge">
+              <svg width="184" height="184" viewBox="0 0 184 184" role="img" id="gauge">
+                <circle cx="92" cy="92" r="70" fill="none" stroke="#E7EFED" stroke-width="20"/>
+                <circle cx="92" cy="92" r="70" fill="none" stroke="#3E5754" stroke-width="20" stroke-dasharray="0 439.82" transform="rotate(-90 92 92)" id="gauge-arc"/>
+                <circle cx="92" cy="22" r="7" fill="#D9AE3A" stroke="#FFFFFF" stroke-width="3" id="gauge-cut"/>
+              </svg>
+              <div class="gauge-text"><strong id="r-prob">–</strong><span>churn probability</span></div>
+            </div>
+            <div class="legend center">
+              <span><span class="sw" style="background:#3E5754"></span>Probability</span>
+              <span><span class="sw" style="background:#D9AE3A;border-radius:50%"></span><span id="r-cut-label">Cut-off</span></span>
+            </div>
+            <div class="verdict" id="r-prediction"></div>
+            <dl>
+              <dt>Confidence</dt><dd id="r-conf"></dd>
+              <dt>Inference latency</dt><dd id="r-lat"></dd>
+              <dt>Model version</dt><dd class="mono" id="r-ver"></dd>
+              <dt>Request ID</dt><dd class="mono rid" id="r-id"></dd>
+            </dl>
           </div>
-          <div class="legend center">
-            <span><span class="sw" style="background:#3E5754"></span>Probability</span>
-            <span><span class="sw" style="background:#D9AE3A;border-radius:50%"></span><span id="r-cut-label">Cut-off</span></span>
+
+          <div class="alert" role="alert" id="result-error" hidden>
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            <div id="result-error-body"></div>
           </div>
-          <div class="verdict" id="r-prediction"></div>
-          <dl>
-            <dt>Confidence</dt><dd id="r-conf"></dd>
-            <dt>Inference latency</dt><dd id="r-lat"></dd>
-            <dt>Model version</dt><dd class="mono" id="r-ver"></dd>
-            <dt>Request ID</dt><dd class="mono rid" id="r-id"></dd>
-          </dl>
-        </div>
 
-        <div class="alert" role="alert" id="result-error" hidden>
-          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-          <div id="result-error-body"></div>
-        </div>
-
-        <div class="empty" id="result-empty">
-          <div class="empty-icon"><svg class="i" aria-hidden="true"><use href="#i-target"/></svg></div>
-          <div>Fill in the form and press <strong>Predict churn</strong>.</div>
-        </div>
-      </div>
-
-      <div class="card" id="performance">
-        <div>
-          <h2>Predict latency, p50</h2>
-          <p class="hint">Before vs after optimisation · 50 requests per level</p>
-        </div>
-        <div class="legend">
-          <span><span class="sw" style="background:#D9AE3A"></span>Baseline (naive)</span>
-          <span><span class="sw" style="background:#3E5754"></span>Optimized</span>
-        </div>
-        <div class="bars" role="img" id="latency-bars"
-             aria-label="Median predict latency. Concurrency 1: 49.05 ms baseline, 6.48 ms optimized. Concurrency 10: 443.19 vs 6.57 ms. Concurrency 25: 1098.01 vs 84.77 ms."></div>
-        <div class="bar-labels" aria-hidden="true"><span>1 concurrent</span><span>10 concurrent</span><span>25 concurrent</span></div>
-        <div class="tip">
-          <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
-          <span>/health p95 at concurrency 10 fell from 1,174.69 ms to 16.67 ms: inference no longer blocks the event loop.</span>
+          <div class="empty" id="result-empty">
+            <div class="empty-icon"><svg class="i" aria-hidden="true"><use href="#i-target"/></svg></div>
+            <div>Fill in the form and press <strong>Predict churn</strong>.</div>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="row">
-      <div class="card wide" id="recent">
+    <!-- ============ RECENT ============ -->
+    <section class="view" data-view="recent" aria-label="Recent predictions" hidden>
+      <div class="card wide">
         <div class="head">
           <div>
             <h2>Last 10 predictions</h2>
             <p class="hint">From /metrics/recent · kept in server memory, resets on restart</p>
           </div>
-          <button class="btn ghost" type="button" id="refresh-recent" style="height:36px;padding:0 14px;font-size:13px"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -381,73 +411,123 @@
           </table>
         </div>
       </div>
+    </section>
 
-      <div class="card narrow" id="drift">
-        <div class="head">
-          <div>
-            <h2>Input drift (PSI)</h2>
-            <p class="hint" id="drift-sub">Loading…</p>
+    <!-- ============ DRIFT ============ -->
+    <section class="view" data-view="drift" aria-label="Input drift" hidden>
+      <div class="row">
+        <div class="card">
+          <div class="head">
+            <div>
+              <h2>Live drift (PSI)</h2>
+              <p class="hint" id="drift-live-sub">Last requests to this server vs training data</p>
+            </div>
+            <span class="badge" id="drift-live-badge" hidden></span>
           </div>
-          <span class="badge" id="drift-badge" hidden></span>
+          <div id="drift-live-body" class="psi-list"></div>
         </div>
-        <div class="psi-list" id="drift-list"></div>
-        <div class="scale" aria-hidden="true"><span>0</span><span style="padding-left:12%">0.1</span><span style="padding-left:18%">0.25</span><span>0.4</span></div>
+        <div class="card">
+          <div class="head">
+            <div>
+              <h2>Reference: IBM Telco vs training</h2>
+              <p class="hint" id="drift-ref-sub">Offline check, evaluation/evaluate_real.py</p>
+            </div>
+            <span class="badge" id="drift-ref-badge" hidden></span>
+          </div>
+          <div id="drift-ref-body" class="psi-list"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>How to read PSI</h2>
         <div class="chips">
           <span class="badge stable">&lt; 0.1 stable</span>
           <span class="badge moderate">0.1–0.25 moderate</span>
           <span class="badge significant">&gt; 0.25 significant</span>
         </div>
-        <p class="fine" id="drift-note"></p>
+        <p class="fine">Population Stability Index compares the share of inputs in each training-data bin. Numeric features only; a basic indicator, not full monitoring. The live window keeps the last 1,000 requests in memory.</p>
       </div>
     </section>
 
-    <section class="row">
-      <div class="card wide">
-        <div class="head">
+    <!-- ============ PERFORMANCE ============ -->
+    <section class="view" data-view="performance" aria-label="Performance" hidden>
+      <div class="row">
+        <div class="card narrow">
           <div>
-            <h2>Throughput under load</h2>
-            <p class="hint">Requests per second by concurrency · single uvicorn worker</p>
+            <h2>Predict latency, p50</h2>
+            <p class="hint" id="lat-sub"></p>
           </div>
           <div class="legend">
-            <span><span class="sw line" style="background:#D9AE3A"></span>Optimized</span>
-            <span><span class="sw line" style="background:#3E5754"></span>Baseline</span>
+            <span><span class="sw" style="background:#D9AE3A"></span>Baseline (naive)</span>
+            <span><span class="sw" style="background:#3E5754"></span>Optimized</span>
+          </div>
+          <div class="bars" role="img" id="latency-bars"></div>
+          <div class="bar-labels" aria-hidden="true" id="latency-labels"></div>
+          <div class="tip" id="lat-tip" hidden>
+            <svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg>
+            <span id="lat-tip-text"></span>
           </div>
         </div>
-        <!-- From benchmarks/results/{baseline-naive,optimized}.json. y = 190 - rps * 0.8 -->
-        <div class="chart-scroll">
-        <svg viewBox="0 0 680 230" width="100%" role="img" style="display:block;font-family:'Nunito Sans',sans-serif"
-             aria-label="Throughput. Optimized: 78.21, 144.4 and 183.37 requests per second at concurrency 1, 10 and 25. Baseline: 17.62, 21.9 and 20.1.">
-          <defs><linearGradient id="optFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D9AE3A" stop-opacity=".35"/><stop offset="1" stop-color="#D9AE3A" stop-opacity="0"/></linearGradient></defs>
-          <g stroke="#E6EDEB"><line x1="50" y1="30" x2="660" y2="30"/><line x1="50" y1="70" x2="660" y2="70"/><line x1="50" y1="110" x2="660" y2="110"/><line x1="50" y1="150" x2="660" y2="150"/><line x1="50" y1="190" x2="660" y2="190"/></g>
-          <g fill="#5A6B68" font-size="12" text-anchor="end"><text x="40" y="34">200</text><text x="40" y="74">150</text><text x="40" y="114">100</text><text x="40" y="154">50</text><text x="40" y="194">0</text></g>
-          <path d="M70,127.4 C215,127.4 215,74.5 360,74.5 C495,74.5 495,43.3 630,43.3 L630,190 L70,190 Z" fill="url(#optFill)"/>
-          <path d="M70,127.4 C215,127.4 215,74.5 360,74.5 C495,74.5 495,43.3 630,43.3" fill="none" stroke="#D9AE3A" stroke-width="3"/>
-          <path d="M70,175.9 C215,175.9 215,172.5 360,172.5 C495,172.5 495,173.9 630,173.9" fill="none" stroke="#3E5754" stroke-width="3"/>
-          <line x1="360" y1="74.5" x2="360" y2="190" stroke="#3E5754" stroke-opacity=".25" stroke-dasharray="3 4"/>
-          <circle cx="70" cy="127.4" r="5" fill="#FFFFFF" stroke="#D9AE3A" stroke-width="3"/>
-          <circle cx="360" cy="74.5" r="7" fill="#3E5754" stroke="#FFFFFF" stroke-width="3"/>
-          <circle cx="630" cy="43.3" r="7" fill="#D9AE3A" stroke="#FFFFFF" stroke-width="3"/>
-          <circle cx="70" cy="175.9" r="4" fill="#3E5754"/><circle cx="360" cy="172.5" r="4" fill="#3E5754"/><circle cx="630" cy="173.9" r="4" fill="#3E5754"/>
-          <rect x="300" y="16" width="120" height="42" rx="10" fill="#3E5754"/><path d="M352 58 L360 66 L368 58 Z" fill="#3E5754"/>
-          <text x="360" y="34" text-anchor="middle" fill="#FFFFFF" font-size="14" font-weight="800">144.4 req/s</text>
-          <text x="360" y="50" text-anchor="middle" fill="#DCE6E3" font-size="11">vs 21.9 baseline</text>
-          <text x="630" y="30" text-anchor="middle" fill="#7D5600" font-size="12" font-weight="800">183.37</text>
-          <g fill="#5A6B68" font-size="12" text-anchor="middle" font-weight="600"><text x="70" y="215">1 concurrent</text><text x="360" y="215">10 concurrent</text><text x="630" y="215">25 concurrent</text></g>
-        </svg>
+        <div class="card wide">
+          <div class="head">
+            <div>
+              <h2>Throughput under load</h2>
+              <p class="hint">Requests per second by concurrency · single uvicorn worker</p>
+            </div>
+            <div class="legend">
+              <span><span class="sw line" style="background:#D9AE3A"></span>Optimized</span>
+              <span><span class="sw line" style="background:#3E5754"></span>Baseline</span>
+            </div>
+          </div>
+          <div class="chart-scroll" id="throughput"></div>
         </div>
       </div>
-
-      <div class="card narrow" id="quality">
+      <div class="card">
         <div>
-          <h2>Churn cut-off trade-off</h2>
-          <p class="hint">Holdout: 3,522 IBM customers, 26.5% churn</p>
+          <h2>Live on Render (free plan)</h2>
+          <p class="hint" id="render-sub"></p>
         </div>
-        <div class="seg full" role="group" aria-label="Cut-off">
-          <button class="btn" type="button" data-cut="deployed" aria-pressed="true">0.71 · deployed</button>
-          <button class="btn" type="button" data-cut="before" aria-pressed="false">0.5 · before</button>
+        <div class="table-wrap">
+          <table class="compact">
+            <thead><tr><th>Concurrency</th><th>Requests</th><th>Throughput</th><th>Predict p50</th><th>Predict p95</th><th>Errors</th></tr></thead>
+            <tbody id="render-body"></tbody>
+          </table>
         </div>
-        <div class="metrics" id="cut-metrics"></div>
-        <p class="fine" id="cut-note"></p>
+        <p class="fine">Above about 25 concurrent requests throughput stays flat: the free plan's CPU is the limit, so extra requests wait longer instead of failing.</p>
+      </div>
+    </section>
+
+    <!-- ============ MODEL QUALITY ============ -->
+    <section class="view" data-view="quality" aria-label="Model quality" hidden>
+      <div class="row">
+        <div class="card narrow">
+          <div>
+            <h2>Test set (synthetic data)</h2>
+            <p class="hint">Held-out split from train.py, fixed seed</p>
+          </div>
+          <dl class="plain" id="training-list"></dl>
+        </div>
+        <div class="card narrow">
+          <div>
+            <h2>Churn cut-off trade-off</h2>
+            <p class="hint" id="cut-sub"></p>
+          </div>
+          <div class="seg full" role="group" aria-label="Cut-off" id="cut-tabs"></div>
+          <div class="metrics" id="cut-metrics"></div>
+          <p class="fine" id="cut-note"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div>
+          <h2>Out-of-sample check: IBM Telco</h2>
+          <p class="hint" id="real-sub"></p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Model</th><th>Accuracy</th><th>ROC-AUC</th><th>Churn precision</th><th>Churn recall</th><th>Flagged as churn</th></tr></thead>
+            <tbody id="real-body"></tbody>
+          </table>
+        </div>
+        <p class="fine">IBM's data has no support-ticket column, so the deployed model is scored with tickets filled as 0, 1 and 2. These rows use a 0.5 cut-off; the cut-off card above shows the tuned one.</p>
       </div>
     </section>
 
@@ -458,6 +538,16 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let threshold = null; // churn cut-off, read from /health
+let evaluation = null; // measured results from /metrics/evaluation, fetched once
+let view = "dashboard";
+const PAGES = {
+  "/": ["dashboard", "Customer Churn Predictor", "TensorFlow model behind a FastAPI inference pipeline. Trained on synthetic data."],
+  "/predict": ["predict", "Predict churn", "Score one customer with the deployed model."],
+  "/recent": ["recent", "Recent predictions", "The last 10 predictions this server made, newest first."],
+  "/drift": ["drift", "Input drift", "How far incoming inputs have moved from the training data."],
+  "/performance": ["performance", "Performance", "Latency and throughput measured with benchmarks/latency_check.py."],
+  "/quality": ["quality", "Model quality", "Test scores, the churn cut-off, and a check on independent IBM Telco data."],
+};
 const FIELDS = ["tenure_months", "monthly_charges", "total_charges", "support_tickets", "contract_type"];
 const PRESETS = {
   risky: { tenure_months: 5, monthly_charges: 95.5, total_charges: 477.5, support_tickets: 4, contract_type: "month-to-month" },
@@ -466,13 +556,7 @@ const PRESETS = {
 const CONTRACTS = { "month-to-month": "Month-to-month", "one-year": "One year", "two-year": "Two year" };
 const LIMIT_MB = 512; // Render free plan
 const GAUGE_LEN = 2 * Math.PI * 70;
-// Measured evidence from committed result files (benchmarks/results, evaluation/results). Not live.
-const LATENCY = [[49.05, 6.48], [443.19, 6.57], [1098.01, 84.77]];
-const REFERENCE_DRIFT = { tenure_months: { psi: 0.1582, status: "moderate" }, monthly_charges: { psi: 0.3773, status: "significant" }, total_charges: { psi: 0.2309, status: "moderate" } };
-const CUTS = {
-  deployed: { acc: 0.7868, prec: 0.662, rec: 0.4021, flag: 0.1613, note: "Flagged customers are right 66% of the time, but only 40% of real churners are caught. Suits expensive retention offers." },
-  before: { acc: 0.7521, prec: 0.5248, rec: 0.7016, flag: 0.3549, note: "Catches 70% of churners, but flags 35.5% of customers when only 26.5% actually leave." },
-};
+const STATUS_ORDER = ["stable", "moderate", "significant"];
 
 async function api(path, options) {
   const res = await fetch(path, options);
@@ -489,15 +573,147 @@ function el(tag, text, className) {
 }
 function bar(cls, pct, color) {
   const node = el("div", undefined, cls);
-  node.style.width = pct.toFixed(1) + "%";
+  node.style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + "%";
   if (color) node.style.background = color;
   return node;
 }
+function row(cells) {
+  const tr = el("tr");
+  for (const c of cells) { const td = el("td"); td.append(c instanceof Node ? c : String(c)); tr.append(td); }
+  return tr;
+}
+function emptyRow(text, cols) {
+  const tr = el("tr"); const td = el("td", text, "fine"); td.colSpan = cols; tr.append(td); return tr;
+}
 const money = (v) => Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct1 = (v) => (v * 100).toFixed(1) + "%";
+const ms = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }) + " ms";
+const day = (iso) => (iso || "").slice(0, 10);
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
 // 2 decimals near the cut-off, else 0.7095 would read "71.0%" next to a 71% cut-off.
 const probText = (r) => (r.churn_probability * 100).toFixed(r.confidence_score < 0.5 ? 2 : 1) + "%";
 const cutText = () => (threshold === null ? "" : `${(threshold * 100).toFixed(0)}% `);
+const worst = (features) => Object.values(features).reduce((w, f) => (STATUS_ORDER.indexOf(f.status) > STATUS_ORDER.indexOf(w) ? f.status : w), "stable");
+function uptime(s) {
+  if (s < 60) return `${Math.round(s)} s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+}
 
+/* ---------- routing ---------- */
+function route(focus) {
+  const path = PAGES[location.pathname] ? location.pathname : "/";
+  const [name, title, lede] = PAGES[path];
+  view = name;
+  document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = s.dataset.view !== name));
+  document.querySelectorAll(".nav a").forEach((a) => (a.getAttribute("href") === path ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+  // On phones the nav is a sideways-scrolling row: keep the current page's item visible.
+  const nav = document.querySelector(".nav"), current = nav.querySelector('[aria-current="page"]');
+  if (nav.scrollWidth > nav.clientWidth) nav.scrollLeft = current.offsetLeft - nav.offsetLeft - 8;
+  $("page-title").textContent = title;
+  $("page-lede").textContent = lede;
+  document.title = path === "/" ? "Churn Predictor" : `${title} · Churn Predictor`;
+  if (focus) $("page-title").focus({ preventScroll: true }); // tell screen readers the page changed
+  loadView();
+}
+
+// Same-origin page links switch views without a reload; new-tab clicks and /docs behave normally.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-route]");
+  if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  if (location.pathname !== a.getAttribute("href")) history.pushState(null, "", a.getAttribute("href"));
+  window.scrollTo(0, 0);
+  route(true);
+});
+window.addEventListener("popstate", () => route(true));
+
+async function getEvaluation() {
+  if (!evaluation) {
+    try { const { ok, body } = await api("/metrics/evaluation"); if (ok) evaluation = body; } catch { /* callers show "not available" */ }
+  }
+  return evaluation;
+}
+
+function loadView() {
+  loadHealth();
+  if (view === "dashboard") loadDashboard();
+  else if (view === "recent") loadRecent();
+  else if (view === "drift") loadDrift();
+  else if (view === "performance") loadPerformance();
+  else if (view === "quality") loadQuality();
+}
+
+/* ---------- health / sidebar ---------- */
+async function loadHealth() {
+  let ok = false, body = null;
+  try { ({ ok, body } = await api("/health")); } catch { /* shown as unreachable below */ }
+  const up = ok && body && body.model_loaded;
+  for (const led of [$("side-led"), $("pill-led")]) led.className = `led ${up ? "ok" : "bad"}`;
+  if (!body) {
+    $("side-status").textContent = $("pill-text").textContent = "API unreachable";
+    return null;
+  }
+  threshold = body.decision_threshold;
+  $("side-status").textContent = up ? `API ${body.status} · model loaded` : `API ${body.status}`;
+  $("pill-text").textContent = up ? `API ${body.status} · threshold ${threshold}` : `API ${body.status}`;
+  document.querySelectorAll("[data-version]").forEach((n) => (n.textContent = body.model_version || "–"));
+  $("cutoff").textContent = threshold ?? "–";
+  $("tile-uptime").textContent = uptime(body.uptime_seconds);
+  placeCutMarker();
+  showMemory(body.memory);
+  return body;
+}
+
+function showMemory(mem) {
+  // Main number: the app's own memory (anonymous RSS), which is what pushes a container toward an OOM kill.
+  // The cgroup total also counts file cache the kernel frees under pressure: a fresh Docker run sat at
+  // 510 of 512 MB with 0 OOM kills, so as the headline it would look full when it is not.
+  // Windows has no RssAnon: fall back to the process working set.
+  const used = mem ? mem.rss_anon_mb ?? mem.process_mb : null;
+  $("mem-label").textContent = mem && mem.rss_anon_mb == null ? "Process memory" : "App memory";
+  if (used == null) {
+    $("mem-text").textContent = "unavailable";
+    $("mem-note").textContent = "This platform does not report memory";
+    return;
+  }
+  const pct = Math.min(100, (used / LIMIT_MB) * 100);
+  $("mem-text").textContent = `${used} MB`; // the limit is in the note and the meter
+  $("mem-meter").firstElementChild.style.width = pct.toFixed(1) + "%";
+  $("mem-meter").setAttribute("aria-valuenow", Math.round(pct));
+  $("mem-note").textContent = mem.cgroup_mb != null
+    ? `Container total ${mem.cgroup_mb} MB incl. reclaimable file cache · limit ${LIMIT_MB} MB`
+    : `Peak ${mem.process_peak_mb} MB · local run, not in a container; Render limit ${LIMIT_MB} MB`;
+}
+
+/* ---------- dashboard ---------- */
+async function loadDashboard() {
+  const [ev, recent, drift] = await Promise.all([
+    getEvaluation(),
+    api("/metrics/recent").then((r) => r.body).catch(() => null),
+    api("/metrics/drift").then((r) => r.body).catch(() => null),
+  ]);
+  const t = ev && ev.training, cal = ev && ev.threshold_calibration;
+  // 4 decimals, as stored: toFixed(3) would turn 0.7825 into 0.782 (binary floating point).
+  $("auc").textContent = t ? t.test_roc_auc.toFixed(4) : "n/a";
+  $("auc-note").textContent = t ? `Accuracy ${t.test_accuracy.toFixed(4)} · trained on ${t.n_train_rows.toLocaleString("en-US")} rows` : "Evaluation results not available";
+  $("cutoff-note").textContent = cal ? `Default was 0.5 · tuned on IBM Telco data (${cal.holdout_rows.toLocaleString("en-US")} holdout rows)` : "Default 0.5 unless calibrated";
+
+  $("tile-recent").textContent = recent ? `${recent.count} / 10` : "n/a";
+  $("tile-recent-note").textContent = recent ? (recent.count ? "Last predictions kept in server memory." : "None yet on this server since it started.") : "Could not load.";
+  if (drift) {
+    const enough = drift.status !== "insufficient_data";
+    $("tile-drift").textContent = enough ? cap(drift.status) : "Not enough data";
+    $("tile-drift-note").textContent = enough ? `Based on the last ${drift.n_samples} requests.` : `${drift.n_samples} of ${drift.min_samples} requests needed.`;
+  } else {
+    $("tile-drift").textContent = "n/a"; $("tile-drift-note").textContent = "Could not load.";
+  }
+  const opt = ev && ev.benchmark_optimized && ev.benchmark_optimized.results.find((r) => r.concurrency === 1);
+  $("tile-latency").textContent = opt ? ms(opt.predict.p50_ms) : "n/a";
+  $("tile-latency-note").textContent = opt ? `One request at a time, optimized build, measured locally ${day(ev.benchmark_optimized.timestamp_utc)}.` : "Benchmark results not available.";
+}
+
+/* ---------- predict ---------- */
 function readForm() {
   const data = {};
   for (const name of FIELDS) {
@@ -574,136 +790,222 @@ async function predict(event) {
   } finally {
     button.disabled = false;
     button.lastElementChild.textContent = "Predict churn";
-    refreshAll();
+    loadHealth();
   }
 }
 
-async function loadHealth() {
-  let ok = false, body = null;
-  try { ({ ok, body } = await api("/health")); } catch { /* shown as unreachable below */ }
-  const up = ok && body && body.model_loaded;
-  for (const led of [$("side-led"), $("pill-led")]) led.className = `led ${up ? "ok" : "bad"}`;
-  if (!body) {
-    $("side-status").textContent = $("pill-text").textContent = "API unreachable";
-    return;
-  }
-  threshold = body.decision_threshold;
-  $("side-status").textContent = up ? `API ${body.status} · model loaded` : `API ${body.status}`;
-  $("pill-text").textContent = up ? `API ${body.status} · threshold ${threshold}` : `API ${body.status}`;
-  document.querySelectorAll("[data-version]").forEach((n) => (n.textContent = body.model_version || "–"));
-  $("cutoff").textContent = threshold ?? "–";
-  placeCutMarker();
-  showMemory(body.memory);
-}
-
-function showMemory(mem) {
-  // Main number: the app's own memory (anonymous RSS), which is what pushes a container toward an OOM kill.
-  // The cgroup total also counts file cache the kernel frees under pressure: a fresh Docker run sat at
-  // 510 of 512 MB with 0 OOM kills, so as the headline it would look full when it is not.
-  // Windows has no RssAnon: fall back to the process working set.
-  const used = mem ? mem.rss_anon_mb ?? mem.process_mb : null;
-  $("mem-label").textContent = mem && mem.rss_anon_mb == null ? "Process memory" : "App memory";
-  if (used == null) {
-    $("mem-text").textContent = "unavailable";
-    $("mem-note").textContent = "This platform does not report memory";
-    return;
-  }
-  const pct = Math.min(100, (used / LIMIT_MB) * 100);
-  $("mem-text").textContent = `${used} / ${LIMIT_MB} MB`;
-  $("mem-meter").firstElementChild.style.width = pct.toFixed(1) + "%";
-  $("mem-meter").setAttribute("aria-valuenow", Math.round(pct));
-  $("mem-note").textContent = mem.cgroup_mb != null
-    ? `Container total ${mem.cgroup_mb} MB incl. reclaimable file cache · limit ${LIMIT_MB} MB`
-    : `Peak ${mem.process_peak_mb} MB · local run, not in a container; Render limit ${LIMIT_MB} MB`;
-}
-
+/* ---------- recent ---------- */
 async function loadRecent() {
   const tbody = $("recent-body");
   try {
     const { body } = await api("/metrics/recent");
     if (!body.count) {
-      const row = el("tr"); const cell = el("td", "No predictions yet.", "fine"); cell.colSpan = 8;
-      row.append(cell); tbody.replaceChildren(row); return;
+      tbody.replaceChildren(emptyRow("No predictions on this server since it started. Make one on the Predict page.", 8));
+      return;
     }
     // Newest first.
     tbody.replaceChildren(...body.predictions.slice().reverse().map(({ input, output }) => {
-      const tickets = el("td", undefined, "center"); tickets.append(el("span", input.support_tickets, "tickets"));
+      const tickets = el("span", input.support_tickets, "tickets");
       const track = el("div", undefined, "track"); track.append(bar(`fill-${output.risk_level}`, output.churn_probability * 100));
-      const wrap = el("div", undefined, "prob"); wrap.append(track, el("span", probText(output)));
-      const prob = el("td"); prob.append(wrap);
-      const risk = el("td"); risk.append(el("span", output.risk_level, `badge ${output.risk_level}`));
-      const row = el("tr");
-      row.append(el("td", `${input.tenure_months} mo`, "b"), el("td", money(input.monthly_charges)), el("td", money(input.total_charges)),
-        tickets, el("td", CONTRACTS[input.contract_type] || input.contract_type), el("td", output.prediction, "b"), prob, risk);
-      return row;
+      const prob = el("div", undefined, "prob"); prob.append(track, el("span", probText(output)));
+      const tr = row([`${input.tenure_months} mo`, money(input.monthly_charges), money(input.total_charges), tickets,
+        CONTRACTS[input.contract_type] || input.contract_type, output.prediction, prob, el("span", output.risk_level, `badge ${output.risk_level}`)]);
+      tr.cells[0].className = "b"; tr.cells[3].className = "center"; tr.cells[5].className = "b";
+      return tr;
     }));
-  } catch { /* table keeps its last state */ }
+  } catch {
+    tbody.replaceChildren(emptyRow("Could not load recent predictions.", 8));
+  }
 }
 
-function renderDrift(features, overall) {
-  $("drift-badge").textContent = overall[0].toUpperCase() + overall.slice(1);
-  $("drift-badge").className = `badge ${overall}`;
-  $("drift-badge").hidden = false;
-  $("drift-list").replaceChildren(...Object.entries(features).map(([name, f]) => {
+/* ---------- drift ---------- */
+function psiNodes(features) {
+  const items = Object.entries(features).map(([name, f]) => {
     const right = el("span"); right.append(el("b", f.psi.toFixed(4)), el("span", f.status, `st ${f.status}`));
     const top = el("div", undefined, "psi-top"); top.append(el("span", name, "mono"), right);
     const track = el("div", undefined, "psi-track");
-    track.append(bar(`bar fill-${f.status}`, Math.min(100, (f.psi / 0.4) * 100)));
+    track.append(bar(`bar fill-${f.status}`, (f.psi / 0.4) * 100));
     for (const left of ["25%", "62.5%"]) { const t = el("div", undefined, "tick"); t.style.left = left; track.append(t); } // 0.1 and 0.25 on a 0–0.4 scale
     const item = el("div", undefined, "psi-item"); item.append(top, track);
     return item;
-  }));
+  });
+  const scale = el("div", undefined, "scale"); scale.setAttribute("aria-hidden", "true");
+  for (const [t, pad] of [["0", ""], ["0.1", "12%"], ["0.25", "18%"], ["0.4", ""]]) { const s = el("span", t); s.style.paddingLeft = pad; scale.append(s); }
+  return [...items, scale];
+}
+
+function setBadge(id, status) {
+  $(id).textContent = cap(status);
+  $(id).className = `badge ${status}`;
+  $(id).hidden = false;
 }
 
 async function loadDrift() {
-  const caveat = "Numeric features only; a basic indicator, not full monitoring.";
+  const live = $("drift-live-body");
   try {
     const { body } = await api("/metrics/drift");
-    if (body.status !== "insufficient_data") {
-      $("drift-sub").textContent = `Live: last ${body.n_samples} requests vs training`;
-      $("drift-note").textContent = caveat;
-      renderDrift(body.features, body.status);
-      return;
+    if (body.status === "insufficient_data") {
+      $("drift-live-badge").hidden = true;
+      $("drift-live-sub").textContent = "Last requests to this server vs training data";
+      const box = el("div", undefined, "empty");
+      const icon = el("div", undefined, "empty-icon");
+      icon.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-pulse"/></svg>'; // static markup, no data
+      const progress = el("div", undefined, "progress"); progress.append(bar("", (body.n_samples / body.min_samples) * 100));
+      progress.setAttribute("role", "progressbar"); progress.setAttribute("aria-label", "Requests collected for the drift check");
+      progress.setAttribute("aria-valuemin", "0"); progress.setAttribute("aria-valuemax", String(body.min_samples)); progress.setAttribute("aria-valuenow", String(body.n_samples));
+      const link = el("a", "Make a prediction →", "btn ghost sm"); link.href = "/predict"; link.dataset.route = "";
+      box.append(icon, el("strong", "Not enough live data yet"),
+        el("div", `The check starts after ${body.min_samples} predictions. ${body.n_samples} so far on this server.`), progress, link);
+      live.replaceChildren(box);
+    } else {
+      $("drift-live-sub").textContent = `Last ${body.n_samples} requests to this server vs training data`;
+      setBadge("drift-live-badge", body.status);
+      live.replaceChildren(...psiNodes(body.features));
     }
-    $("drift-note").textContent = `Live view needs at least ${body.min_samples} requests (${body.n_samples} so far). ${caveat}`;
   } catch {
-    $("drift-note").textContent = `Could not load live drift. ${caveat}`;
+    live.replaceChildren(el("p", "Could not load live drift.", "fine"));
   }
-  // Until live data is enough, show the measured reference: IBM Telco inputs vs synthetic training data.
-  $("drift-sub").textContent = "IBM Telco inputs (7,043 rows) vs training";
-  renderDrift(REFERENCE_DRIFT, "significant");
+
+  const ev = await getEvaluation();
+  const real = ev && ev.real_world;
+  if (real) {
+    $("drift-ref-sub").textContent = `${real.rows.toLocaleString("en-US")} IBM Telco customers vs the synthetic training data · offline, evaluation/evaluate_real.py`;
+    setBadge("drift-ref-badge", worst(real.psi_real_vs_training));
+    $("drift-ref-body").replaceChildren(...psiNodes(real.psi_real_vs_training));
+  } else {
+    $("drift-ref-body").replaceChildren(el("p", "Reference results not available.", "fine"));
+  }
 }
 
-function renderLatency() {
-  const col = (v, color) => {
-    const c = el("div", undefined, "col"); const b = el("div");
-    b.style.height = Math.max(4, Math.round((v / 1100) * 150)) + "px"; b.style.background = color;
-    c.append(el("span", v >= 1000 ? Math.round(v).toLocaleString("en-US") : String(v)), b);
-    return c;
-  };
-  $("latency-bars").replaceChildren(...LATENCY.map(([base, opt]) => {
-    const g = el("div"); g.append(col(base, "#D9AE3A"), col(opt, "#3E5754")); return g;
-  }));
+/* ---------- performance ---------- */
+function throughputSvg(series) {
+  // series: [{ color, fill, points: [[concurrency, rps]] }]; all values are numbers from our own result files.
+  const x0 = 70, x1 = 630, yTop = 30, yBot = 190;
+  const max = Math.ceil(Math.max(...series.flatMap((s) => s.points.map((p) => p[1]))) / 50) * 50 || 50;
+  const n = series[0].points.length;
+  const x = (i) => x0 + (n === 1 ? 0 : (i * (x1 - x0)) / (n - 1));
+  const y = (v) => yBot - (v / max) * (yBot - yTop);
+  const curve = (pts) => pts.map((p, i) => (i === 0 ? `M${x(0)},${y(p[1]).toFixed(1)}`
+    : ` C${((x(i - 1) + x(i)) / 2).toFixed(1)},${y(pts[i - 1][1]).toFixed(1)} ${((x(i - 1) + x(i)) / 2).toFixed(1)},${y(p[1]).toFixed(1)} ${x(i)},${y(p[1]).toFixed(1)}`)).join("");
+  let s = `<svg viewBox="0 0 680 230" width="100%" role="img" style="display:block" aria-label="${series.map((se) => `${se.name}: ${se.points.map((p) => `${p[1]} requests per second at concurrency ${p[0]}`).join(", ")}`).join(". ")}">`;
+  s += '<defs><linearGradient id="optFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D9AE3A" stop-opacity=".35"/><stop offset="1" stop-color="#D9AE3A" stop-opacity="0"/></linearGradient></defs>';
+  for (let k = 0; k <= 4; k++) {
+    const v = (max * k) / 4, yy = y(v).toFixed(1);
+    s += `<line x1="50" y1="${yy}" x2="660" y2="${yy}" stroke="#E6EDEB"/><text x="40" y="${(+yy + 4).toFixed(1)}" fill="#5A6B68" font-size="12" text-anchor="end">${v}</text>`;
+  }
+  for (const se of series) {
+    const d = curve(se.points);
+    if (se.fill) s += `<path d="${d} L${x(n - 1)},${yBot} L${x0},${yBot} Z" fill="url(#optFill)"/>`;
+    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="3"/>`;
+    se.points.forEach((p, i) => {
+      s += `<circle cx="${x(i)}" cy="${y(p[1]).toFixed(1)}" r="5" fill="#FFFFFF" stroke="${se.color}" stroke-width="3"/>`;
+      s += `<text x="${x(i)}" y="${(y(p[1]) - 12).toFixed(1)}" text-anchor="middle" fill="${se.label}" font-size="12" font-weight="800">${p[1]}</text>`;
+    });
+  }
+  series[0].points.forEach((p, i) => (s += `<text x="${x(i)}" y="215" fill="#5A6B68" font-size="12" text-anchor="middle" font-weight="600">${p[0]} concurrent</text>`));
+  return s + "</svg>";
 }
 
-function renderCut(id) {
-  const c = CUTS[id];
+async function loadPerformance() {
+  const ev = await getEvaluation();
+  const base = ev && ev.benchmark_baseline, opt = ev && ev.benchmark_optimized;
+  if (!base || !opt) {
+    $("latency-bars").replaceChildren(el("p", "Benchmark results not available.", "fine"));
+    $("throughput").replaceChildren(el("p", "Benchmark results not available.", "fine"));
+  } else {
+    const levels = opt.results.map((r) => r.concurrency);
+    const at = (file, c) => file.results.find((r) => r.concurrency === c);
+    $("lat-sub").textContent = `Before vs after optimisation · ${opt.results[0].requests} requests per level · local machine, ${day(opt.timestamp_utc)}`;
+    const max = Math.max(...levels.flatMap((c) => [at(base, c).predict.p50_ms, at(opt, c).predict.p50_ms]));
+    const col = (v, color) => {
+      const c = el("div", undefined, "col"); const b = el("div");
+      b.style.height = Math.max(4, Math.round((v / max) * 150)) + "px"; b.style.background = color;
+      c.append(el("span", v >= 1000 ? Math.round(v).toLocaleString("en-US") : String(v)), b);
+      return c;
+    };
+    $("latency-bars").replaceChildren(...levels.map((c) => { const g = el("div"); g.append(col(at(base, c).predict.p50_ms, "#D9AE3A"), col(at(opt, c).predict.p50_ms, "#3E5754")); return g; }));
+    $("latency-bars").setAttribute("aria-label", "Median predict latency. " + levels.map((c) => `Concurrency ${c}: ${at(base, c).predict.p50_ms} ms baseline, ${at(opt, c).predict.p50_ms} ms optimized.`).join(" "));
+    $("latency-labels").replaceChildren(...levels.map((c) => el("span", `${c} concurrent`)));
+    const b10 = at(base, 10), o10 = at(opt, 10);
+    if (b10 && o10) {
+      $("lat-tip-text").textContent = `/health p95 while 10 predictions run at once: ${ms(b10.health_during_load.p95_ms)} before, ${ms(o10.health_during_load.p95_ms)} after. Inference no longer blocks the event loop.`;
+      $("lat-tip").hidden = false;
+    }
+    $("throughput").innerHTML = throughputSvg([
+      { name: "Optimized", color: "#D9AE3A", label: "#7D5600", fill: true, points: opt.results.map((r) => [r.concurrency, r.throughput_rps]) },
+      { name: "Baseline", color: "#3E5754", label: "#3E5754", points: base.results.map((r) => [r.concurrency, r.throughput_rps]) },
+    ]);
+  }
+
+  const runs = [ev && ev.benchmark_render, ev && ev.benchmark_render_high_load].filter(Boolean);
+  $("render-sub").textContent = runs.length
+    ? `Measured against ${runs[0].url} · ${[...new Set(runs.map((r) => day(r.timestamp_utc)))].join(", ")}`
+    : "Render results not available.";
+  $("render-body").replaceChildren(...(runs.length
+    ? runs.flatMap((f) => f.results).map((r) => row([r.concurrency, r.requests, `${r.throughput_rps} req/s`, ms(r.predict.p50_ms), ms(r.predict.p95_ms), r.predict.errors]))
+    : [emptyRow("No Render results recorded.", 6)]));
+}
+
+/* ---------- model quality ---------- */
+async function loadQuality() {
+  const ev = await getEvaluation();
+  const t = ev && ev.training;
+  const list = $("training-list");
+  if (t) {
+    list.replaceChildren();
+    for (const [k, v] of [["Model version", t.model_version], ["Test accuracy", t.test_accuracy.toFixed(4)], ["Test ROC-AUC", t.test_roc_auc.toFixed(4)],
+      ["Training rows", t.n_train_rows.toLocaleString("en-US")], ["Churn cut-off", t.decision_threshold]]) list.append(el("dt", k), el("dd", v));
+  } else {
+    list.replaceChildren(el("dt", "Training results not available."));
+  }
+
+  const cal = ev && ev.threshold_calibration;
+  if (cal) {
+    const chosen = cal.chosen_threshold;
+    const tabs = [
+      { id: `holdout_at_${chosen}`, label: `${chosen} · deployed` },
+      { id: "holdout_at_0.5", label: "0.5 · default" },
+    ].filter((tab) => cal[tab.id]);
+    $("cut-sub").textContent = `Holdout: ${cal.holdout_rows.toLocaleString("en-US")} IBM customers, ${pct1(cal.holdout_actual_churn_rate)} churn`;
+    $("cut-tabs").replaceChildren(...tabs.map((tab) => {
+      const b = el("button", tab.label, "btn"); b.type = "button"; b.dataset.cut = tab.id;
+      b.addEventListener("click", () => renderCut(cal, tab.id)); return b;
+    }));
+    renderCut(cal, tabs[0].id);
+  } else {
+    $("cut-sub").textContent = "Calibration results not available.";
+  }
+
+  const real = ev && ev.real_world;
+  if (real) {
+    $("real-sub").textContent = `${real.rows.toLocaleString("en-US")} customers, ${pct1(real.actual_churn_rate)} churn · always guessing "stays" scores ${real.majority_class_accuracy.toFixed(4)} accuracy`;
+    const line = (name, m) => row([name, m.accuracy.toFixed(4), m.roc_auc.toFixed(4), m.precision_churn.toFixed(4), m.recall_churn.toFixed(4), pct1(m.predicted_churn_rate)]);
+    $("real-body").replaceChildren(
+      ...Object.entries(real.deployed_model).map(([k, m]) => line(`Deployed model, ${k.replace("=", " = ")}`, m)),
+      line("Logistic regression trained on IBM data (5-fold CV)", real.baseline_trained_on_real_cv5));
+  } else {
+    $("real-body").replaceChildren(emptyRow("Real-world results not available.", 6));
+  }
+}
+
+function renderCut(cal, id) {
+  const c = cal[id];
   document.querySelectorAll("[data-cut]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.cut === id)));
   $("cut-metrics").replaceChildren(...[
-    ["Accuracy", c.acc.toFixed(4), c.acc, "#3E5754"],
-    ["Churn precision", c.prec.toFixed(4), c.prec, "#3E5754"],
-    ["Churn recall", c.rec.toFixed(4), c.rec, "#D9AE3A"],
-    ["Flagged as churn", (c.flag * 100).toFixed(1) + "%", c.flag, "#D9AE3A"],
+    ["Accuracy", c.accuracy.toFixed(4), c.accuracy, "#3E5754"],
+    ["Churn precision", c.precision_churn.toFixed(4), c.precision_churn, "#3E5754"],
+    ["Churn recall", c.recall_churn.toFixed(4), c.recall_churn, "#D9AE3A"],
+    ["Flagged as churn", pct1(c.predicted_churn_rate), c.predicted_churn_rate, "#D9AE3A"],
   ].map(([label, value, v, color]) => {
     const top = el("div", undefined, "metric-top"); top.append(el("span", label), el("b", value));
     const track = el("div", undefined, "metric-track"); track.append(bar("", v * 100, color));
     const m = el("div", undefined, "metric"); m.append(top, track); return m;
   }));
-  $("cut-note").textContent = c.note;
+  $("cut-note").textContent = `Flags ${pct1(c.predicted_churn_rate)} of customers (${pct1(cal.holdout_actual_churn_rate)} actually leave). `
+    + `${pct1(c.precision_churn)} of flagged customers really churn, and ${pct1(c.recall_churn)} of churners are caught.`;
 }
 
-function refreshAll() { loadHealth(); loadRecent(); loadDrift(); }
-
+/* ---------- wiring ---------- */
 const presetButtons = document.querySelectorAll("[data-preset]");
 presetButtons.forEach((b) => b.addEventListener("click", () => {
   const preset = PRESETS[b.dataset.preset];
@@ -712,17 +1014,9 @@ presetButtons.forEach((b) => b.addEventListener("click", () => {
 }));
 // Editing a field means the form no longer matches an example.
 $("form").addEventListener("input", () => presetButtons.forEach((o) => o.setAttribute("aria-pressed", "false")));
-document.querySelectorAll("[data-cut]").forEach((b) => b.addEventListener("click", () => renderCut(b.dataset.cut)));
-document.querySelectorAll(".nav a[href^='#']").forEach((a) => a.addEventListener("click", () => {
-  document.querySelectorAll(".nav a").forEach((o) => o.removeAttribute("aria-current"));
-  a.setAttribute("aria-current", "true");
-}));
 $("form").addEventListener("submit", predict);
-$("refresh").addEventListener("click", refreshAll);
-$("refresh-recent").addEventListener("click", loadRecent);
-renderLatency();
-renderCut("deployed");
-refreshAll();
+$("refresh").addEventListener("click", loadView);
+route(false);
 </script>
 </body>
 </html>

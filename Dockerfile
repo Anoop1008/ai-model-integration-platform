@@ -16,6 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN useradd --create-home --uid 1000 appuser
 COPY app ./app
 COPY artifacts ./artifacts
+# Measured results shown on the Performance and Model quality pages (/metrics/evaluation).
+COPY benchmarks/results ./benchmarks/results
+COPY evaluation/results ./evaluation/results
 USER appuser
 
 EXPOSE 8000

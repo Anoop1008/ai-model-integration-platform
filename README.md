@@ -117,7 +117,10 @@ curl -X POST http://localhost:8000/predict/churn -H "Content-Type: application/j
 
 curl http://localhost:8000/metrics/recent
 curl http://localhost:8000/metrics/drift
+curl http://localhost:8000/metrics/evaluation   # recorded benchmark + evaluation results behind the web pages
 ```
+
+Web pages (one HTML file, routed in the browser): `/` dashboard, `/predict`, `/recent`, `/drift`, `/performance`, `/quality`. Every number on them comes from the API: live values from `/health` and `/metrics/*`, measured results from `/metrics/evaluation`, which reads the committed files in `benchmarks/results/` and `evaluation/results/`.
 
 Invalid input returns 422 with a consistent shape: `{"error": "validation_error", "message": ..., "details": [...]}`. Unhandled errors return 500 `{"error": "internal_error", ...}` without leaking internals.
 
@@ -127,7 +130,7 @@ Invalid input returns 422 with a consistent shape: `{"error": "validation_error"
 pytest -v
 ```
 
-12 tests: web page served, health, valid prediction, 422 for negative tenure / bad contract type / missing field, preprocessing determinism, `/metrics/recent`, drift `insufficient_data` then a real status, PSI math, 20 concurrent requests, and the 500 error shape.
+20 tests: each of the 6 page routes served, `/metrics/evaluation` (all result files present, cut-off matches the API), web page served, health, valid prediction, 422 for negative tenure / bad contract type / missing field, preprocessing determinism, `/metrics/recent`, drift `insufficient_data` then a real status, PSI math, 20 concurrent requests, and the 500 error shape.
 
 ## Latency before / after
 

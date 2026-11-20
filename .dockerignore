@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tests/
-benchmarks/
+benchmarks/*.py
 .env
 *.md
 !README.md

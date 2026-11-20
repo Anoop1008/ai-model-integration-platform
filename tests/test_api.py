@@ -37,10 +37,28 @@ def test_health(client):
     assert 0 < mem["process_mb"] <= mem["process_peak_mb"]
 
 
-def test_frontend_served(client):
-    r = client.get("/")
+@pytest.mark.parametrize("page", ["/", "/predict", "/recent", "/drift", "/performance", "/quality"])
+def test_page_routes_serve_the_app(client, page):
+    r = client.get(page)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
+    assert f'href="{page}"' in r.text  # each route has its sidebar link
+
+
+def test_metrics_evaluation(client):
+    body = client.get("/metrics/evaluation").json()
+    assert body["training"]["test_roc_auc"] == 0.8554
+    # Every result file the pages chart must be present (and copied into the Docker image).
+    for name in ("benchmark_baseline", "benchmark_optimized", "benchmark_render", "benchmark_render_high_load",
+                 "threshold_calibration", "real_world"):
+        assert body[name] is not None, name
+    assert [r["concurrency"] for r in body["benchmark_optimized"]["results"]] == [1, 10, 25]
+    # The cut-off the page explains must be the one the API actually uses.
+    assert body["threshold_calibration"]["chosen_threshold"] == client.app.state.pipeline.threshold
+
+
+def test_frontend_served(client):
+    r = client.get("/")
     assert "/predict/churn" in r.text
     # Fonts are self-hosted, not fetched from Google.
     assert "fonts.googleapis.com" not in r.text

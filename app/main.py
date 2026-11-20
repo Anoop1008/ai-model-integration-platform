@@ -1,5 +1,6 @@
 """FastAPI app: validation -> preprocessing -> TF inference -> JSON response."""
 
+import json
 import logging
 import mimetypes
 import sys
@@ -24,6 +25,16 @@ logger = logging.getLogger("churn-api")
 RECENT_SIZE = 10
 DRIFT_WINDOW = 1000
 STATIC_DIR = Path(__file__).parent / "static"
+ROOT = Path(__file__).resolve().parent.parent
+PAGES = ("/", "/predict", "/recent", "/drift", "/performance", "/quality")
+RESULT_FILES = {
+    "benchmark_baseline": "benchmarks/results/baseline-naive.json",
+    "benchmark_optimized": "benchmarks/results/optimized.json",
+    "benchmark_render": "benchmarks/results/render-free.json",
+    "benchmark_render_high_load": "benchmarks/results/render-free-high-load.json",
+    "threshold_calibration": "evaluation/results/threshold_calibration.json",
+    "real_world": "evaluation/results/real_world.json",
+}
 
 
 @asynccontextmanager
@@ -132,10 +143,30 @@ def memory_mb() -> dict | None:
     }
 
 
-@app.get("/", include_in_schema=False)
 async def frontend():
     # Single static page served by the API itself: same origin, so no CORS setup.
+    # Every page route returns it; the page's script shows the section for the URL.
     return FileResponse(STATIC_DIR / "index.html")
+
+
+for _page in PAGES:
+    app.add_api_route(_page, frontend, methods=["GET"], include_in_schema=False)
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None  # a missing result file shows as "not available" on the page, not a 500
+
+
+@app.get("/metrics/evaluation")
+async def metrics_evaluation(request: Request):
+    """Measured results behind the Performance and Model quality pages, read from the committed
+    result files, so the page shows recorded measurements instead of numbers typed into HTML."""
+    stats = request.app.state.pipeline.training_stats
+    training = {k: stats.get(k) for k in ("model_version", "n_train_rows", "test_accuracy", "test_roc_auc", "decision_threshold")}
+    return {"training": training, **{name: _read_json(ROOT / path) for name, path in RESULT_FILES.items()}}
 
 
 @app.get("/health")
