@@ -104,6 +104,7 @@ async def health(request: Request):
         "status": "ok" if pipeline else "starting",
         "model_loaded": pipeline is not None,
         "model_version": pipeline.model_version if pipeline else None,
+        "decision_threshold": pipeline.threshold if pipeline else None,
         "uptime_seconds": round(time.time() - request.app.state.started_at, 2),
         "memory": memory_mb(),
     }

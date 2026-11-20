@@ -194,3 +194,5 @@ Memory caveat found here: the first run of a freshly built image reported `cgrou
 - Holdout: accuracy 0.7521 → **0.7868**, precision 0.5248 → **0.6620**, recall 0.7016 → **0.4021**, flagged 35.5% → **16.1%** (actual 26.5%). ROC-AUC unchanged (0.8161).
 - `app/pipeline.py`: reads the cut-off (default 0.5). `confidence_score` is now the probability of the predicted class (was `max(p, 1-p)`, wrong once the cut-off isn't 0.5). High risk now starts at the cut-off, so High always means Churn.
 - Tests: updated version and confidence checks; new `test_threshold_between_05_and_cutoff` (0.6 → Retain/Medium/0.4, 0.71 → Churn/High). `pytest`: **13 passed**.
+
+**Borderline display fix.** Just under the cut-off, the page showed "Likely to stay" with a bare low confidence (e.g. 29%), and 0.7095 rounded to "71.0%" next to a 71% cut-off. Now `/health` returns `decision_threshold`; when confidence is under 50% the page shows "Borderline: 70.95% churn, just under the 71% cut-off" and uses 2 decimals in the result and the table. Verified in the browser (borderline, clear churn, clear stay); no console errors. `pytest`: 13 passed.

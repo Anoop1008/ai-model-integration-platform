@@ -152,6 +152,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+let threshold = null; // churn cut-off, read from /health
 const FIELDS = ["tenure_months", "monthly_charges", "total_charges", "support_tickets", "contract_type"];
 const PRESETS = {
   risky: { tenure_months: 5, monthly_charges: 95.5, total_charges: 477.5, support_tickets: 4, contract_type: "month-to-month" },
@@ -204,11 +205,16 @@ function showResult(r) {
   $("r-prediction").textContent = r.prediction === "Churn" ? "Likely to churn" : "Likely to stay";
   $("r-risk").textContent = `${r.risk_level} risk`;
   $("r-risk").className = `badge ${r.risk_level}`;
-  const pct = (r.churn_probability * 100).toFixed(1) + "%";
+  const borderline = r.confidence_score < 0.5;
+  // 2 decimals near the cut-off, else 0.7095 would read "71.0%" next to a 71% cut-off.
+  const pct = (r.churn_probability * 100).toFixed(borderline ? 2 : 1) + "%";
   $("r-bar").style.width = pct;
   $("r-bar-label").setAttribute("aria-label", `Churn probability ${pct}`);
   $("r-prob").textContent = pct;
-  $("r-conf").textContent = (r.confidence_score * 100).toFixed(1) + "%";
+  // Under 50% only happens near the cut-off (e.g. 70.9% churn vs a 71% cut-off): say so instead of a bare low number.
+  $("r-conf").textContent = borderline
+    ? `Borderline: ${pct} churn, just under the ${threshold === null ? "" : (threshold * 100).toFixed(0) + "% "}cut-off`
+    : (r.confidence_score * 100).toFixed(1) + "%";
   $("r-lat").textContent = `${r.inference_latency_ms} ms`;
   $("r-ver").textContent = r.model_version;
   $("r-id").textContent = r.request_id;
@@ -243,6 +249,7 @@ async function loadHealth() {
   const pill = $("health");
   try {
     const { ok, body } = await api("/health");
+    if (ok) threshold = body.decision_threshold;
     const mem = body && body.memory && body.memory.cgroup_mb != null ? ` · ${body.memory.cgroup_mb} MB` : "";
     pill.replaceChildren(el("span", "", `dot ${ok && body.model_loaded ? "ok" : "bad"}`),
       el("span", ok ? `API ${body.status} · ${body.model_version} · up ${Math.round(body.uptime_seconds)} s${mem}` : "API unhealthy"));
@@ -264,7 +271,7 @@ async function loadRecent() {
       const row = el("tr");
       row.append(el("td", input.tenure_months), el("td", input.monthly_charges), el("td", input.total_charges),
         el("td", input.support_tickets), el("td", input.contract_type), el("td", output.prediction),
-        el("td", (output.churn_probability * 100).toFixed(1) + "%"), el("td", output.risk_level, output.risk_level));
+        el("td", (output.churn_probability * 100).toFixed(output.confidence_score < 0.5 ? 2 : 1) + "%"), el("td", output.risk_level, output.risk_level));
       return row;
     }));
   } catch { /* table keeps its last state */ }

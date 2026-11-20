@@ -29,6 +29,7 @@ def test_health(client):
     assert body["status"] == "ok"
     assert body["model_loaded"] is True
     assert body["model_version"] == "churn-tf-v1.1"
+    assert body["decision_threshold"] == 0.71
     assert body["uptime_seconds"] >= 0
     # Linux only; None on Windows dev machines. Validated in Docker.
     mem = body["memory"]
