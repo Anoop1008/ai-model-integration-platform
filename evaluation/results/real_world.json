@@ -1,0 +1,50 @@
+{
+  "dataset": "IBM Telco Customer Churn",
+  "rows": 7043,
+  "actual_churn_rate": 0.2654,
+  "majority_class_accuracy": 0.7346,
+  "deployed_model": {
+    "support_tickets=0": {
+      "accuracy": 0.7677,
+      "roc_auc": 0.8184,
+      "precision_churn": 0.5561,
+      "recall_churn": 0.6174,
+      "predicted_churn_rate": 0.2946
+    },
+    "support_tickets=1": {
+      "accuracy": 0.7548,
+      "roc_auc": 0.819,
+      "precision_churn": 0.5291,
+      "recall_churn": 0.6913,
+      "predicted_churn_rate": 0.3467
+    },
+    "support_tickets=2": {
+      "accuracy": 0.7267,
+      "roc_auc": 0.8228,
+      "precision_churn": 0.4908,
+      "recall_churn": 0.8026,
+      "predicted_churn_rate": 0.4339
+    }
+  },
+  "psi_real_vs_training": {
+    "tenure_months": {
+      "psi": 0.1582,
+      "status": "moderate"
+    },
+    "monthly_charges": {
+      "psi": 0.3773,
+      "status": "significant"
+    },
+    "total_charges": {
+      "psi": 0.2309,
+      "status": "moderate"
+    }
+  },
+  "baseline_trained_on_real_cv5": {
+    "accuracy": 0.7866,
+    "roc_auc": 0.8279,
+    "precision_churn": 0.626,
+    "recall_churn": 0.4864,
+    "predicted_churn_rate": 0.2062
+  }
+}

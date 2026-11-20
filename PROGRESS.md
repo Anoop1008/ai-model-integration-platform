@@ -164,3 +164,23 @@ Verified in a real browser (Chrome via DevTools, local server):
 Docker check: the page is served from the image (`GET /` → 200, 14,675 bytes).
 
 Memory caveat found here: the first run of a freshly built image reported `cgroup_mb` 1139.9 MB, while later runs reported 293.6 MB (matching `docker stats` 293.9 MiB). The extra was reclaimable file cache from reading TensorFlow's files out of new image layers. With a real 512 MB limit (`docker run -m 512m`) the container ran at 294.4 MB and was not OOM-killed. `rss_anon_mb` (~279 MB) is the steadier number; the caveat is noted in `memory_mb()`.
+
+---
+
+## Checking the "not tested" items ✅
+
+**Accessibility (screen reader proxy).** No real screen reader available. Ran Lighthouse on the live page with a prediction shown: **Accessibility 100**, Best Practices 100, SEO 75 → fixed the one failure (missing meta description).
+
+**Phone width.** Skipped at the user's request (already checked locally at 390 px).
+
+**Load above 25 concurrent (live Render).** `benchmarks/latency_check.py --levels 25,50,100 --requests 200`, results in `benchmarks/results/render-free-high-load.json`:
+
+| Concurrency | Requests | predict p50 | predict p95 | errors | /health p50 | req/s |
+|---|---|---|---|---|---|---|
+| 25 | 200 | 922.18 ms | 1500.55 ms | 0 | 451.65 ms | 24.20 |
+| 50 | 200 | 2024.85 ms | 3112.79 ms | 0 | 431.20 ms | 24.55 |
+| 100 | 200 | 3383.24 ms | 5672.01 ms | 0 | 430.70 ms | 23.96 |
+
+600 requests, 0 errors, no restart; memory peak 314.2 MB of 512 MB. Throughput is flat at ~24 req/s: the 0.15 CPU is the limit, so more concurrency only adds queueing time. `/health` p50 stayed ~430 ms (≈290 ms of that is network), so the event loop stayed responsive.
+
+**Model quality on independent data.** `evaluation/evaluate_real.py` on IBM Telco Customer Churn (7,043 rows; IBM calls it a fictional telco, so realistic sample data, not verified real customers). `support_tickets` is missing there and filled with 0/1/2. Deployed model: ROC-AUC 0.8184–0.8228, accuracy 0.7267–0.7677. Majority-class accuracy 0.7346. Logistic regression trained on that data (5-fold CV): ROC-AUC 0.8279, accuracy 0.7866. Conclusion: ranking transfers well; the 0.5 threshold over-predicts churn (29–43% predicted vs 26.5% actual). PSI flags the data as shifted (monthly charges 0.3773). Full table in README.

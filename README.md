@@ -57,6 +57,20 @@ A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
 | Test accuracy | 0.7825 |
 | Test ROC-AUC | 0.8554 |
 
+## Quality on independent data
+
+`evaluation/evaluate_real.py` scores the deployed model on the **IBM Telco Customer Churn** dataset (7,043 customers), the standard public churn benchmark. IBM describes it as a fictional telco company, so it is realistic sample data rather than verified real customers, but it was made independently of our generator. It has no `support_tickets` column, so that field is filled with a constant (0, 1 or 2) to show its effect. Numbers from `evaluation/results/real_world.json`:
+
+| Model | Accuracy | ROC-AUC | Churn precision | Churn recall |
+|---|---|---|---|---|
+| Always predict "stay" | 0.7346 | – | – | – |
+| Deployed model, tickets = 0 | 0.7677 | 0.8184 | 0.5561 | 0.6174 |
+| Deployed model, tickets = 1 | 0.7548 | 0.8190 | 0.5291 | 0.6913 |
+| Deployed model, tickets = 2 | 0.7267 | 0.8228 | 0.4908 | 0.8026 |
+| Logistic regression trained on this data (5-fold CV, same 4 fields) | 0.7866 | 0.8279 | 0.6260 | 0.4864 |
+
+What it shows: the model **ranks** customers almost as well as one trained on this data (ROC-AUC 0.82 vs 0.83), so the churn patterns built into the synthetic data are realistic. Its **0.5 cut-off is less well matched**: it flags more churners than really leave (predicted 29–43% vs actual 26.5%), and the guessed ticket count moves accuracy from 0.77 to 0.73. Retraining or recalibrating on real data would fix that. Our own PSI check flags this data as shifted from training (monthly charges PSI 0.3773, significant), which is the drift indicator working as intended.
+
 ## Run locally
 
 Requires Python 3.11.
@@ -144,7 +158,7 @@ This is a **basic indicator, not full monitoring**: numeric features only, in-me
 
 ## Design decisions and limitations
 
-- **Synthetic data.** The model only demonstrates the pipeline; its metrics say nothing about real churn.
+- **Synthetic training data.** On an independent public benchmark it ranks well (ROC-AUC ~0.82) but its 0.5 threshold over-predicts churn; see "Quality on independent data".
 - **No authentication** or rate limiting on any endpoint.
 - **Single worker.** Each extra worker would load its own model copy, multiplying memory. Concurrency comes from the thread pool.
 - **Basic drift only.** See above.

@@ -5,3 +5,4 @@ __pycache__/
 .env
 *.log
 # artifacts/ is intentionally committed so cloud builds need no retraining.
+data/

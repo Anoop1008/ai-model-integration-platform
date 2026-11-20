@@ -1,0 +1,62 @@
+{
+  "label": "render-free-high-load",
+  "url": "https://churn-inference-api.onrender.com",
+  "timestamp_utc": "2026-11-20T13:11:17+00:00",
+  "machine": "Windows AMD64 py3.11.17",
+  "results": [
+    {
+      "concurrency": 25,
+      "requests": 200,
+      "wall_seconds": 8.26,
+      "throughput_rps": 24.2,
+      "predict": {
+        "count": 200,
+        "p50_ms": 922.18,
+        "p95_ms": 1500.55,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 15,
+        "p50_ms": 451.65,
+        "p95_ms": 818.35,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 50,
+      "requests": 200,
+      "wall_seconds": 8.15,
+      "throughput_rps": 24.55,
+      "predict": {
+        "count": 200,
+        "p50_ms": 2024.85,
+        "p95_ms": 3112.79,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 9,
+        "p50_ms": 431.2,
+        "p95_ms": 2505.75,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 100,
+      "requests": 200,
+      "wall_seconds": 8.35,
+      "throughput_rps": 23.96,
+      "predict": {
+        "count": 200,
+        "p50_ms": 3383.24,
+        "p95_ms": 5672.01,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 16,
+        "p50_ms": 430.7,
+        "p95_ms": 806.95,
+        "errors": 0
+      }
+    }
+  ]
+}

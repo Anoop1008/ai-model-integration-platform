@@ -87,12 +87,13 @@ A model is only right for data that looks like its training data. **PSI (Populat
 
 | Question | Answer |
 |---|---|
-| How accurate is it? | 0.7825 accuracy, 0.8554 ROC-AUC on a 400-row test set. Synthetic data, so it proves the pipeline, not real-world performance. |
+| How accurate is it? | 0.7825 accuracy, 0.8554 ROC-AUC on its synthetic test set. On the independent IBM Telco benchmark (7,043 customers): ROC-AUC 0.82 vs 0.83 for a model trained on that data, accuracy 0.73–0.77 depending on the guessed ticket count. Ranks well; the 0.5 threshold over-predicts churn. |
 | What's ROC-AUC? | Chance the model ranks a random churner above a random non-churner. 0.5 = guessing, 1.0 = perfect. |
 | What happens with bad input? | 422 with a consistent JSON body listing each problem; the model is never called. |
 | What if the model crashes mid-request? | 500 with a generic JSON message; details go to server logs, not the client. |
 | How do you know it works? | 12 pytest tests, including 20 concurrent requests and drift going from `insufficient_data` to `significant`. |
 | What would you add for real production? | Authentication, rate limiting, a database for predictions, persistent monitoring with alerts, real data, model versioning/rollback, CI. |
+| Why test on another dataset? | A test split from the same generator only shows the model learned the generator. Independent data shows whether the patterns transfer. |
 | Biggest limitation? | Synthetic data; in-memory state lost on restart; ~200 MB memory headroom on the free plan. |
 
 ## Try it yourself

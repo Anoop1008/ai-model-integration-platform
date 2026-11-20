@@ -95,11 +95,13 @@ async def run_level(client: httpx.AsyncClient, concurrency: int, n_requests: int
     }
 
 
-async def main(url: str, label: str, n_requests: int) -> None:
-    async with httpx.AsyncClient(base_url=url, timeout=120) as client:
+async def main(url: str, label: str, n_requests: int, levels: list[int]) -> None:
+    # Default httpx pool allows 100 connections; raise it so high levels are truly concurrent.
+    limits = httpx.Limits(max_connections=max(levels) + 10)
+    async with httpx.AsyncClient(base_url=url, timeout=120, limits=limits) as client:
         (await client.get("/health")).raise_for_status()
         results = []
-        for c in LEVELS:
+        for c in levels:
             res = await run_level(client, c, n_requests)
             results.append(res)
             p, h = res["predict"], res["health_during_load"]
@@ -131,5 +133,6 @@ if __name__ == "__main__":
     ap.add_argument("--url", default="http://localhost:8000")
     ap.add_argument("--label", required=True)
     ap.add_argument("--requests", type=int, default=50, help="requests per concurrency level")
+    ap.add_argument("--levels", default=",".join(map(str, LEVELS)), help="comma-separated, e.g. 25,50,100")
     args = ap.parse_args()
-    asyncio.run(main(args.url, args.label, args.requests))
+    asyncio.run(main(args.url, args.label, args.requests, [int(x) for x in args.levels.split(",")]))
