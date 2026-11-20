@@ -144,3 +144,23 @@ Memory from live `/health`: 301.0 MB idle, **304.2 MB peak** after the load. No 
 `README.md` includes: live URL, architecture diagram, local run steps, curl examples, test instructions, real before/after table, drift explanation, design decisions and limitations.
 
 Not verified: the README links rendering on GitHub, and Render behaviour beyond concurrency 25.
+
+---
+
+## After the spec: frontend and walkthrough ✅
+
+Built:
+- `app/static/index.html`: one static page served by FastAPI at `/` (same origin, so no CORS, no build step, no new dependencies). Prediction form with two example presets, result card (prediction, risk, probability bar, confidence, latency), API status pill with live memory, last 10 predictions, drift table. Light and dark mode.
+- `docs/HOW_IT_WORKS.md`: plain-English walkthrough of the request flow, every file, the four key ideas, and likely interview questions.
+- New test `test_frontend_served`. `pytest`: **12 passed**.
+
+Verified in a real browser (Chrome via DevTools, local server):
+- Prediction works for both presets (high-risk 86.2% Churn/High, loyal 0.8% Retain/Low).
+- Invalid input (tenure −5, monthly 900) shows the API's 422 messages for both fields.
+- After 62 requests the drift table appears (overall `moderate`, from sampling noise with requests drawn from the training distribution).
+- Phone width (390 px), light mode: page width 390 px, no horizontal scroll. Fixed a bug where the table widened the page.
+- No console errors after adding an inline favicon.
+
+Docker check: the page is served from the image (`GET /` → 200, 14,675 bytes).
+
+Memory caveat found here: the first run of a freshly built image reported `cgroup_mb` 1139.9 MB, while later runs reported 293.6 MB (matching `docker stats` 293.9 MiB). The extra was reclaimable file cache from reading TensorFlow's files out of new image layers. With a real 512 MB limit (`docker run -m 512m`) the container ran at 294.4 MB and was not OOM-killed. `rss_anon_mb` (~279 MB) is the steadier number; the caveat is noted in `memory_mb()`.

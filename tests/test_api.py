@@ -35,6 +35,13 @@ def test_health(client):
     assert mem is None or set(mem) == {"cgroup_mb", "cgroup_peak_mb", "rss_anon_mb"}
 
 
+def test_frontend_served(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "/predict/churn" in r.text
+
+
 def test_valid_prediction(client):
     r = client.post("/predict/churn", json=VALID)
     assert r.status_code == 200

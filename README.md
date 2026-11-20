@@ -2,7 +2,9 @@
 
 A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
 
-**Live demo:** https://churn-inference-api.onrender.com (Swagger UI at [`/docs`](https://churn-inference-api.onrender.com/docs)). Render free instance: it sleeps after inactivity, so the first request can take ~50 s.
+**Live demo:** https://churn-inference-api.onrender.com (web page; Swagger UI at [`/docs`](https://churn-inference-api.onrender.com/docs)).
+
+**New here?** Read [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) for a plain-English walkthrough. Render free instance: it sleeps after inactivity, so the first request can take ~50 s.
 
 > **The data is synthetic.** `train.py` generates 2,000 telecom customer rows with a fixed seed. Churn is a noisy logistic function of the features. No real customer data is used.
 
@@ -42,6 +44,7 @@ A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
 | `app/pipeline.py` | `InferencePipeline`: `preprocess` → `infer` → `postprocess`, warm-up |
 | `app/drift.py` | PSI drift indicator |
 | `app/main.py` | FastAPI app, lifespan, endpoints, error handlers |
+| `app/static/index.html` | Web page: prediction form, result, last 10 predictions, drift (plain HTML/JS, served at `/`) |
 | `tests/` | pytest suite |
 | `benchmarks/latency_check.py` | asyncio + httpx latency check |
 
@@ -66,7 +69,7 @@ python train.py                 # optional: artifacts/ is already committed
 uvicorn app.main:app --port 8000
 ```
 
-Swagger UI: http://localhost:8000/docs
+Web page: http://localhost:8000 · Swagger UI: http://localhost:8000/docs
 
 ### Docker
 
@@ -97,7 +100,7 @@ Invalid input returns 422 with a consistent shape: `{"error": "validation_error"
 pytest -v
 ```
 
-11 tests: health, valid prediction, 422 for negative tenure / bad contract type / missing field, preprocessing determinism, `/metrics/recent`, drift `insufficient_data` then a real status, PSI math, 20 concurrent requests, and the 500 error shape.
+12 tests: web page served, health, valid prediction, 422 for negative tenure / bad contract type / missing field, preprocessing determinism, `/metrics/recent`, drift `insufficient_data` then a real status, PSI math, 20 concurrent requests, and the 500 error shape.
 
 ## Latency before / after
 

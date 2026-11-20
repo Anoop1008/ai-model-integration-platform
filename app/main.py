@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.drift import compute_drift
 from app.pipeline import InferencePipeline
@@ -20,6 +20,7 @@ logger = logging.getLogger("churn-api")
 
 RECENT_SIZE = 10
 DRIFT_WINDOW = 1000
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -75,6 +76,8 @@ def memory_mb() -> dict | None:
     is enforced on the cgroup (cgroup_mb / cgroup_peak_mb), not on process RSS: RSS also
     counts TensorFlow's shared libraries mapped from disk (~340 MB), which are reclaimable.
     rss_anon_mb is the process's own heap, a fallback if cgroup files are not visible.
+    Caveat: cgroup values can include reclaimable file cache (seen once at ~1140 MB on the
+    first run of a fresh image locally); rss_anon_mb is the steadier number.
     """
     try:
         lines = Path("/proc/self/status").read_text().splitlines()
@@ -86,6 +89,12 @@ def memory_mb() -> dict | None:
         "cgroup_peak_mb": _read_mb("/sys/fs/cgroup/memory.peak", 1024 * 1024),
         "rss_anon_mb": round(int(anon.split()[0]) / 1024, 1) if anon else None,
     }
+
+
+@app.get("/", include_in_schema=False)
+async def frontend():
+    # Single static page served by the API itself: same origin, so no CORS setup.
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
