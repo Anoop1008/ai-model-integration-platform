@@ -240,3 +240,13 @@ Checked https://churn-inference-api.onrender.com at 375 px (Chrome device emulat
 - Closes when a page is picked, on Escape (focus returns to the button), or on ✕. The button has `aria-expanded`, `aria-controls` and an "Open menu"/"Close menu" label.
 - Replaces the earlier sideways-scrolling nav row. Desktop is unchanged: no button, full sidebar.
 - Checked locally at 375 px: menu shows all 7 items; each page picked from the menu opens the right section and closes the menu; Escape and ✕ close it; no sideways scroll. Lighthouse mobile: all four categories 100. Desktop (1536 px): button hidden, 7 nav items and health panel visible. 20/20 tests pass. Works: yes.
+
+### Live desktop check and layout-shift fix
+
+Live desktop check (Render, 1440×900, after commit d3cfff0): sidebar beside the content with all 7 items and the health panel, no menu button; all 6 pages show the right section and active item; nothing wider than the screen; Back works; prediction 86.2% / Likely to churn / High risk; no console errors. Lighthouse desktop on live `/quality`: Accessibility, Best Practices, SEO 100, but Agentic Browsing 86 because of **Cumulative Layout Shift 0.166** (pass mark 0.1).
+
+Cause, reproduced in a cold isolated tab (1350×940 like Lighthouse, Slow 4G): CLS 0.1553. When `/metrics/evaluation` arrived (~1.6 s), the empty cards filled in: the IBM Telco card moved down 252 px and grew 187 px, the cut-off tabs grew 36 px, and table columns changed width. It did not show locally before because local responses are near-instant.
+
+Fix: each page section stays hidden behind a "Loading…" line until its data is rendered, then appears complete, so nothing visible moves. `loadView()` now returns a promise; a route token stops a slow response from showing a page the user already left. Refresh still updates the visible page in place.
+
+After the fix, same cold Slow 4G test locally: `/quality` 0.0014, `/` 0.0093, `/drift` 0.0117, `/recent` 0.0117, `/performance` 0.0119, `/predict` 0.0279 (all far under 0.1; the remainder is the header pill and memory text changing width). Sidebar clicks, rapid clicks (only the last page shows), Back, Refresh and a prediction all work. Lighthouse desktop on local `/quality`: all four categories 100. 20/20 tests pass. Works: yes.

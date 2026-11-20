@@ -285,6 +285,8 @@
       </div>
     </header>
 
+    <p class="fine" id="view-loading" role="status" hidden>Loading…</p>
+
     <!-- ============ DASHBOARD ============ -->
     <section class="view" data-view="dashboard" aria-label="Dashboard" hidden>
       <div class="row">
@@ -545,7 +547,7 @@
       </div>
     </section>
 
-    <p class="footer">No authentication or rate limiting. Single worker; recent predictions and the drift window live in memory.</p>
+    <p class="footer" id="footer">No authentication or rate limiting. Single worker; recent predictions and the drift window live in memory.</p>
   </main>
 </div>
 
@@ -615,18 +617,28 @@ function uptime(s) {
 }
 
 /* ---------- routing ---------- */
-function route(focus) {
+let routeToken = 0;
+async function route(focus) {
   const path = PAGES[location.pathname] ? location.pathname : "/";
   const [name, title, lede] = PAGES[path];
   view = name;
-  document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = s.dataset.view !== name));
+  const token = ++routeToken;
+  // Show a section only once its data is in. Filling cards after they were visible made the page
+  // jump (Lighthouse CLS 0.166 on live /quality); a section that appears complete moves nothing.
+  document.querySelectorAll("[data-view]").forEach((s) => (s.hidden = true));
+  $("view-loading").hidden = false;
+  $("footer").hidden = true;
   document.querySelectorAll(".nav a").forEach((a) => (a.getAttribute("href") === path ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   setMenu(false); // phones: picking a page closes the menu
   $("page-title").textContent = title;
   $("page-lede").textContent = lede;
   document.title = path === "/" ? "Churn Predictor" : `${title} · Churn Predictor`;
   if (focus) $("page-title").focus({ preventScroll: true }); // tell screen readers the page changed
-  loadView();
+  await loadView();
+  if (token !== routeToken) return; // the user already moved to another page
+  $("view-loading").hidden = true;
+  document.querySelector(`[data-view="${name}"]`).hidden = false;
+  $("footer").hidden = false;
 }
 
 // Same-origin page links switch views without a reload; new-tab clicks and /docs behave normally.
@@ -647,13 +659,12 @@ async function getEvaluation() {
   return evaluation;
 }
 
+// Resolves when the current page's data is rendered. Loaders catch their own errors, so this never rejects.
 function loadView() {
-  loadHealth();
-  if (view === "dashboard") loadDashboard();
-  else if (view === "recent") loadRecent();
-  else if (view === "drift") loadDrift();
-  else if (view === "performance") loadPerformance();
-  else if (view === "quality") loadQuality();
+  const health = loadHealth(); // sidebar and header; only the dashboard shows health data inside its section
+  const page = { dashboard: () => Promise.all([health, loadDashboard()]), recent: loadRecent, drift: loadDrift,
+                 performance: loadPerformance, quality: loadQuality }[view];
+  return page ? page() : Promise.resolve();
 }
 
 /* ---------- health / sidebar ---------- */
