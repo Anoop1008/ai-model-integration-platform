@@ -30,6 +30,9 @@ def test_health(client):
     assert body["model_loaded"] is True
     assert body["model_version"] == "churn-tf-v1"
     assert body["uptime_seconds"] >= 0
+    # Linux only; None on Windows dev machines. Validated in Docker.
+    mem = body["memory"]
+    assert mem is None or set(mem) == {"cgroup_mb", "cgroup_peak_mb", "rss_anon_mb"}
 
 
 def test_valid_prediction(client):

@@ -4,6 +4,7 @@ import logging
 import time
 from collections import deque
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
@@ -60,6 +61,33 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     )
 
 
+def _read_mb(path: str, divisor: int) -> float | None:
+    try:
+        return round(int(Path(path).read_text().split()[0]) / divisor, 1)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def memory_mb() -> dict | None:
+    """Container memory, read from Linux cgroup v2 and /proc. None off Linux (e.g. Windows dev).
+
+    Render's free plan hides memory metrics, so the app reports its own. The 512 MB limit
+    is enforced on the cgroup (cgroup_mb / cgroup_peak_mb), not on process RSS: RSS also
+    counts TensorFlow's shared libraries mapped from disk (~340 MB), which are reclaimable.
+    rss_anon_mb is the process's own heap, a fallback if cgroup files are not visible.
+    """
+    try:
+        lines = Path("/proc/self/status").read_text().splitlines()
+    except OSError:
+        return None
+    anon = next((ln.split(":", 1)[1] for ln in lines if ln.startswith("RssAnon:")), None)
+    return {
+        "cgroup_mb": _read_mb("/sys/fs/cgroup/memory.current", 1024 * 1024),
+        "cgroup_peak_mb": _read_mb("/sys/fs/cgroup/memory.peak", 1024 * 1024),
+        "rss_anon_mb": round(int(anon.split()[0]) / 1024, 1) if anon else None,
+    }
+
+
 @app.get("/health")
 async def health(request: Request):
     pipeline = getattr(request.app.state, "pipeline", None)
@@ -68,6 +96,7 @@ async def health(request: Request):
         "model_loaded": pipeline is not None,
         "model_version": pipeline.model_version if pipeline else None,
         "uptime_seconds": round(time.time() - request.app.state.started_at, 2),
+        "memory": memory_mb(),
     }
 
 
