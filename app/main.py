@@ -26,7 +26,6 @@ async def lifespan(app: FastAPI):
     # Load the model ONCE per process. Loading per request would add seconds of
     # latency to every call and repeatedly allocate memory.
     pipeline = InferencePipeline.load()
-    pipeline.warm_up()
     app.state.pipeline = pipeline
     app.state.started_at = time.time()
     # In-memory ring buffers: oldest entries fall off automatically. Lost on restart.
@@ -73,11 +72,10 @@ async def health(request: Request):
 
 @app.post("/predict/churn", response_model=ChurnResponse)
 async def predict_churn(req: ChurnRequest, request: Request) -> ChurnResponse:
-    pipeline: InferencePipeline = request.app.state.pipeline
-    # TF inference is CPU-bound and synchronous. Running it directly in this async
-    # handler would block the event loop, stalling every other request (even
-    # /health). run_in_threadpool moves it to a worker thread.
-    result = await run_in_threadpool(pipeline.predict, req)
+    # DELIBERATELY NAIVE BASELINE (tag baseline-naive), kept only for the benchmark:
+    # loads the model on every request and runs inference inline, blocking the event loop.
+    pipeline = InferencePipeline.load()
+    result = pipeline.predict(req)
     request.app.state.recent.append({"input": req.model_dump(), "output": result.model_dump()})
     request.app.state.drift_window.append(req.model_dump())
     return result
