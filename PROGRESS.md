@@ -252,3 +252,27 @@ Fix: each page section stays hidden behind a "Loading…" line until its data is
 After the fix, same cold Slow 4G test locally: `/quality` 0.0014, `/` 0.0093, `/drift` 0.0117, `/recent` 0.0117, `/performance` 0.0119, `/predict` 0.0279 (all far under 0.1; the remainder is the header pill and memory text changing width). Sidebar clicks, rapid clicks (only the last page shows), Back, Refresh and a prediction all work. Lighthouse desktop on local `/quality`: all four categories 100. 20/20 tests pass. Works: yes.
 
 Follow-up after deploying 4024350: live desktop was fixed (cold Slow 4G 0.0018; Lighthouse desktop all 100), but Lighthouse **mobile** on live `/quality` still found CLS 0.23. Cause, reproduced at 412×823: on phones the sidebar and the content are two stacked flex rows inside `.page` (`min-height: 100vh`). With only "Loading…" on the page, the default `align-content: stretch` spread the spare height between the rows, so the content sat 236 px lower and jumped up when the data arrived. Fix: `align-content: flex-start` on `.page`. After (locally): all 6 pages 0.001 at 412×823 cold Slow 4G; Lighthouse mobile on `/quality` and `/predict` all four categories 100; desktop `/quality` 0.0013 with the sidebar still beside the content. 20/20 tests pass.
+
+### Plain UI and clean-up
+
+Requested changes, all in `app/static/index.html`:
+1. **Plain look.** White sidebar with a border, nav labels in normal case (no all-caps), small square logo; light-grey page with white cards, thin borders, 8 px corners, no drop shadows; the coloured stat cards (gold/teal/dotted) are now plain white cards. Same layout, pages, data and font.
+2. **Removed** the dotted pattern and dashed curves from the sidebar and stat cards.
+3. **Removed the dot** before "API ok" (header and sidebar). Health is shown by text colour instead: green when ok, red when the API is down.
+4. **Removed the Refresh button.** Clicking a sidebar item (even the current one) reloads that page's data.
+5. **Removed the Swagger UI button**: it opened `/docs`, the same as "API docs" in the sidebar.
+Also: the support-tickets column in Recent is now a plain number instead of a gold circle.
+
+Tested locally (desktop 1440×900):
+- Sidebar: all 6 pages open the right section, highlight the right item and set the tab title; "API docs" opens `/docs` (200).
+- Opening each of the 6 URLs directly (as on a browser refresh) shows the right page.
+- Dashboard tiles open Recent, Drift, Performance.
+- Predict: High-risk example 86.2% Likely to churn / High; Loyal example 0.8% Likely to stay / Low (99.2% confidence); typing un-highlights the example buttons; tenure 48 shows the borderline text (62.35%, just under the 71% cut-off); tenure -1 and an empty tenure show the API's 422 messages; changing the contract select changes the result (51.81%).
+- Recent lists those predictions newest first.
+- Drift: empty state (4 of 50) with a working "Make a prediction" link; IBM reference marked Significant.
+- Model quality: both cut-off buttons switch the four metrics (0.71: 0.7868/0.6620/0.4021/16.1%; 0.5: 0.7521/0.5248/0.7016/35.5%); IBM table has 4 rows.
+- Performance: 3 latency groups, throughput chart, 6 Render rows, /health tip.
+- Back and Forward work. No console errors other than the two 422s triggered on purpose.
+
+Phone (375×812): menu closed at start, opens with all 7 items plus Service health; each page opens from it and the menu closes; Escape closes it; no page scrolls sideways.
+Lighthouse: mobile `/quality` and desktop `/` both 100 in all four categories. 20/20 tests pass. Works: yes.
