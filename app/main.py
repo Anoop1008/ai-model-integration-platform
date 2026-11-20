@@ -1,6 +1,8 @@
 """FastAPI app: validation -> preprocessing -> TF inference -> JSON response."""
 
 import logging
+import mimetypes
+import sys
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -11,6 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.drift import compute_drift
 from app.pipeline import InferencePipeline
@@ -38,6 +41,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Churn Inference API", version="1.0.0", lifespan=lifespan)
+# Self-hosted fonts: the page makes no third-party requests. Windows and slim images lack a woff2 MIME entry.
+mimetypes.add_type("font/woff2", ".woff2")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.exception_handler(RequestValidationError)
@@ -69,25 +75,60 @@ def _read_mb(path: str, divisor: int) -> float | None:
         return None
 
 
+def _windows_process_mb() -> tuple[float, float]:
+    """(working set, peak working set) of this process in MB, via the Win32 API (no psutil needed)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):  # PROCESS_MEMORY_COUNTERS
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+            (name, ctypes.c_size_t)
+            for name in ("PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage",
+                         "QuotaPeakNonPagedPoolUsage", "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage")
+        ]
+
+    kernel32, psapi = ctypes.WinDLL("kernel32"), ctypes.WinDLL("psapi")
+    # Explicit types: the process handle is pointer-sized; ctypes' default int would truncate it on 64-bit.
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    c = Counters(cb=ctypes.sizeof(Counters))
+    if not psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb):
+        raise OSError("GetProcessMemoryInfo failed")
+    return round(c.WorkingSetSize / 2**20, 1), round(c.PeakWorkingSetSize / 2**20, 1)
+
+
 def memory_mb() -> dict | None:
-    """Container memory, read from Linux cgroup v2 and /proc. None off Linux (e.g. Windows dev).
+    """Memory in MB. Container (cgroup) numbers on Linux; process numbers on Linux and Windows.
 
     Render's free plan hides memory metrics, so the app reports its own. The 512 MB limit
     is enforced on the cgroup (cgroup_mb / cgroup_peak_mb), not on process RSS: RSS also
     counts TensorFlow's shared libraries mapped from disk (~340 MB), which are reclaimable.
-    rss_anon_mb is the process's own heap, a fallback if cgroup files are not visible.
-    Caveat: cgroup values can include reclaimable file cache (seen once at ~1140 MB on the
-    first run of a fresh image locally); rss_anon_mb is the steadier number.
+    process_mb / process_peak_mb (RSS, or the working set on Windows) are there so local
+    runs outside a container still show a real number; they are not the Render limit.
+    rss_anon_mb is the process's own heap. Caveat: cgroup values can include reclaimable
+    file cache (seen once at ~1140 MB on the first run of a fresh image locally).
     """
+    if sys.platform == "win32":
+        try:
+            process, peak = _windows_process_mb()
+        except OSError:
+            return None
+        return {"cgroup_mb": None, "cgroup_peak_mb": None, "rss_anon_mb": None, "process_mb": process, "process_peak_mb": peak}
     try:
         lines = Path("/proc/self/status").read_text().splitlines()
     except OSError:
-        return None
-    anon = next((ln.split(":", 1)[1] for ln in lines if ln.startswith("RssAnon:")), None)
+        return None  # shortcut: macOS has no /proc; add a branch if anyone develops there.
+    status = dict(ln.split(":", 1) for ln in lines if ":" in ln)
+
+    def kb_to_mb(key: str) -> float | None:
+        return round(int(status[key].split()[0]) / 1024, 1) if key in status else None
+
     return {
         "cgroup_mb": _read_mb("/sys/fs/cgroup/memory.current", 1024 * 1024),
         "cgroup_peak_mb": _read_mb("/sys/fs/cgroup/memory.peak", 1024 * 1024),
-        "rss_anon_mb": round(int(anon.split()[0]) / 1024, 1) if anon else None,
+        "rss_anon_mb": kb_to_mb("RssAnon"),
+        "process_mb": kb_to_mb("VmRSS"),
+        "process_peak_mb": kb_to_mb("VmHWM"),
     }
 
 

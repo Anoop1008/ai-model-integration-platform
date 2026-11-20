@@ -196,3 +196,21 @@ Memory caveat found here: the first run of a freshly built image reported `cgrou
 - Tests: updated version and confidence checks; new `test_threshold_between_05_and_cutoff` (0.6 → Retain/Medium/0.4, 0.71 → Churn/High). `pytest`: **13 passed**.
 
 **Borderline display fix.** Just under the cut-off, the page showed "Likely to stay" with a bare low confidence (e.g. 29%), and 0.7095 rounded to "71.0%" next to a 71% cut-off. Now `/health` returns `decision_threshold`; when confidence is under 50% the page shows "Borderline: 70.95% churn, just under the 71% cut-off" and uses 2 decimals in the result and the table. Verified in the browser (borderline, clear churn, clear stay); no console errors. `pytest`: 13 passed.
+
+## Final UI from design file
+
+Rebuilt `app/static/index.html` from the supplied design (`Churn Inference Platform UI.html`, a bundled React mock with hard-coded numbers) as plain HTML/CSS/JS. No new dependencies.
+
+- Live from the API: health status, model version, cut-off, memory (see below), prediction gauge with cut-off marker, risk badge, 422 errors, last 10 predictions, live PSI once 50+ requests exist.
+- Static, copied from committed result files: latency bars and throughput chart (`benchmarks/results/baseline-naive.json`, `optimized.json`), cut-off trade-off (`evaluation/results/threshold_calibration.json`), ROC-AUC (`artifacts/training_stats.json`), and IBM Telco PSI shown until live drift has enough data (`evaluation/results/real_world.json`).
+- Kept the borderline fix: 62.35% at a 71% cut-off reads "Borderline: 62.35% churn, just under the 71% cut-off".
+
+Checked locally (1440 px, Chrome): high-risk example gives 86.2% / Likely to churn / High; tenure -1 shows the 422 detail; tenure 48 shows the borderline text. Lighthouse desktop: Accessibility, Best Practices, SEO and Agentic all 100. 13/13 tests pass. Works: yes.
+
+### Follow-up: memory on every platform, self-hosted fonts, phone width
+
+- **Memory showed "n/a" locally.** `/health` now also returns `process_mb` / `process_peak_mb`: `VmRSS`/`VmHWM` from `/proc` on Linux, the working set from the Win32 API (`GetProcessMemoryInfo` via `ctypes`, no psutil) on Windows. Checked: Windows `/health` 367.0 MB vs `tasklist` 375,812 K (= 367.0 MB). The test now requires a real number on every platform.
+- **Headline memory number changed.** In Docker with `-m 512m`, `cgroup_mb` read 509.8 of 512 MB right after start. `memory.stat`: anon 251.6 MB, file cache 230.3 MB, `oom_kill` 0, container kept running after 100 requests. The kernel reclaims that cache, so a cgroup meter at 99.6% would look full when it is not. The page now leads with the app's own memory (`rss_anon_mb`, 279.6 / 512 MB in that run) and shows the container total in the note. On Windows it falls back to `process_mb`.
+- **Fonts self-hosted.** Latin subsets of Nunito Sans and JetBrains Mono (variable woff2, 81 KB together, taken from the design file) live in `app/static/fonts/` with their OFL license, served via a `/static` mount with `font/woff2` content type. The page makes no third-party requests.
+- **Phone width (375 px).** The sidebar becomes a compact header with a swipeable nav (866 px tall before, 324 px after). The throughput chart scrolls sideways inside its card instead of shrinking its text to ~5 px. No page-level horizontal scroll. Lighthouse mobile: Accessibility, Best Practices, SEO, Agentic all 100.
+- Dark mode: not needed (per user). 13/13 tests pass. Works: yes.

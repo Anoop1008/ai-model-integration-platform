@@ -31,9 +31,10 @@ def test_health(client):
     assert body["model_version"] == "churn-tf-v1.1"
     assert body["decision_threshold"] == 0.71
     assert body["uptime_seconds"] >= 0
-    # Linux only; None on Windows dev machines. Validated in Docker.
+    # Process memory is reported on Linux and Windows; cgroup numbers only inside a Linux container.
     mem = body["memory"]
-    assert mem is None or set(mem) == {"cgroup_mb", "cgroup_peak_mb", "rss_anon_mb"}
+    assert set(mem) == {"cgroup_mb", "cgroup_peak_mb", "rss_anon_mb", "process_mb", "process_peak_mb"}
+    assert 0 < mem["process_mb"] <= mem["process_peak_mb"]
 
 
 def test_frontend_served(client):
@@ -41,6 +42,11 @@ def test_frontend_served(client):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
     assert "/predict/churn" in r.text
+    # Fonts are self-hosted, not fetched from Google.
+    assert "fonts.googleapis.com" not in r.text
+    font = client.get("/static/fonts/nunito-sans-latin.woff2")
+    assert font.status_code == 200 and font.content[:4] == b"wOF2"
+    assert font.headers["content-type"] == "font/woff2"
 
 
 def test_valid_prediction(client):
