@@ -1,0 +1,62 @@
+{
+  "label": "optimized-eager-keras",
+  "url": "http://localhost:8000",
+  "timestamp_utc": "2026-11-20T05:00:29+00:00",
+  "machine": "Windows AMD64 py3.11.17",
+  "results": [
+    {
+      "concurrency": 1,
+      "requests": 50,
+      "wall_seconds": 0.71,
+      "throughput_rps": 70.42,
+      "predict": {
+        "count": 50,
+        "p50_ms": 8.28,
+        "p95_ms": 10.35,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 14,
+        "p50_ms": 6.14,
+        "p95_ms": 8.59,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 10,
+      "requests": 50,
+      "wall_seconds": 0.4,
+      "throughput_rps": 125.97,
+      "predict": {
+        "count": 50,
+        "p50_ms": 17.16,
+        "p95_ms": 354.0,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 3,
+        "p50_ms": 22.37,
+        "p95_ms": 237.22,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 25,
+      "requests": 50,
+      "wall_seconds": 0.81,
+      "throughput_rps": 61.62,
+      "predict": {
+        "count": 50,
+        "p50_ms": 352.83,
+        "p95_ms": 480.6,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 5,
+        "p50_ms": 44.31,
+        "p95_ms": 276.56,
+        "errors": 0
+      }
+    }
+  ]
+}

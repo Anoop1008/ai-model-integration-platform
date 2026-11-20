@@ -1,0 +1,62 @@
+{
+  "label": "optimized",
+  "url": "http://localhost:8000",
+  "timestamp_utc": "2026-11-20T05:01:25+00:00",
+  "machine": "Windows AMD64 py3.11.17",
+  "results": [
+    {
+      "concurrency": 1,
+      "requests": 50,
+      "wall_seconds": 0.64,
+      "throughput_rps": 78.21,
+      "predict": {
+        "count": 50,
+        "p50_ms": 6.48,
+        "p95_ms": 10.58,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 13,
+        "p50_ms": 5.17,
+        "p95_ms": 9.14,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 10,
+      "requests": 50,
+      "wall_seconds": 0.35,
+      "throughput_rps": 144.4,
+      "predict": {
+        "count": 50,
+        "p50_ms": 6.57,
+        "p95_ms": 303.92,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 7,
+        "p50_ms": 6.29,
+        "p95_ms": 16.67,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 25,
+      "requests": 50,
+      "wall_seconds": 0.27,
+      "throughput_rps": 183.37,
+      "predict": {
+        "count": 50,
+        "p50_ms": 84.77,
+        "p95_ms": 232.18,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 4,
+        "p50_ms": 24.59,
+        "p95_ms": 67.71,
+        "errors": 0
+      }
+    }
+  ]
+}

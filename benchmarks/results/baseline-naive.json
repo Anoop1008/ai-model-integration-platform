@@ -1,0 +1,62 @@
+{
+  "label": "baseline-naive",
+  "url": "http://localhost:8000",
+  "timestamp_utc": "2026-11-20T05:00:10+00:00",
+  "machine": "Windows AMD64 py3.11.17",
+  "results": [
+    {
+      "concurrency": 1,
+      "requests": 50,
+      "wall_seconds": 2.84,
+      "throughput_rps": 17.62,
+      "predict": {
+        "count": 50,
+        "p50_ms": 49.05,
+        "p95_ms": 69.37,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 52,
+        "p50_ms": 4.51,
+        "p95_ms": 22.77,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 10,
+      "requests": 50,
+      "wall_seconds": 2.28,
+      "throughput_rps": 21.9,
+      "predict": {
+        "count": 50,
+        "p50_ms": 443.19,
+        "p95_ms": 852.14,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 4,
+        "p50_ms": 399.8,
+        "p95_ms": 1174.69,
+        "errors": 0
+      }
+    },
+    {
+      "concurrency": 25,
+      "requests": 50,
+      "wall_seconds": 2.49,
+      "throughput_rps": 20.1,
+      "predict": {
+        "count": 50,
+        "p50_ms": 1098.01,
+        "p95_ms": 1382.46,
+        "errors": 0
+      },
+      "health_during_load": {
+        "count": 4,
+        "p50_ms": 528.76,
+        "p95_ms": 1226.93,
+        "errors": 0
+      }
+    }
+  ]
+}
