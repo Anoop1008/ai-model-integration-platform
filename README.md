@@ -17,7 +17,7 @@ A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
                          └────────────────────────────────────────────────────────────────────┘
 
  POST /predict/churn
-        │
+        │  rate limit per client IP (429)  ·  X-API-Key check if API_KEY is set (401)
         ▼
  ┌─────────────────┐  invalid  ┌──────────────────────────┐
  │ Pydantic v2      │─────────▶│ 422 {"error", "message",  │
@@ -31,8 +31,9 @@ A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
  │ ColumnTransformer│   │ training=False   │   │ risk level, latency, ver. │
  └─────────────────┘   └─────────────────┘   └────────────┬─────────────┘
                                                            ▼
-                                   ring buffers: last 10 predictions (/metrics/recent)
-                                                 last 1000 inputs  (/metrics/drift, PSI)
+                              INSERT into SQLite (data/predictions.db), same worker thread
+                              read back with SQL: /metrics/recent (last 10),
+                              /metrics/drift (last 1000, PSI), /metrics/summary (aggregates)
                                                            ▼
                                                   200 ChurnResponse JSON
 ```
@@ -43,8 +44,10 @@ A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
 | `app/schemas.py` | Pydantic request/response contracts |
 | `app/pipeline.py` | `InferencePipeline`: `preprocess` → `infer` → `postprocess`, warm-up |
 | `app/drift.py` | PSI drift indicator |
+| `app/store.py` | SQLite prediction log: insert, recent, drift window, SQL aggregates |
+| `app/security.py` | API-key check, per-client rate limiter, Content-Security-Policy |
 | `app/main.py` | FastAPI app, lifespan, endpoints, error handlers |
-| `app/static/index.html` | Web page: prediction form, result, last 10 predictions, drift (plain HTML/JS, served at `/`) |
+| `app/static/index.html`, `app.js` | Web pages (plain HTML/CSS/JS, served at `/`); the script is a separate file so the CSP can forbid inline scripts |
 | `tests/` | pytest suite |
 | `benchmarks/latency_check.py` | asyncio + httpx latency check |
 
@@ -117,12 +120,59 @@ curl -X POST http://localhost:8000/predict/churn -H "Content-Type: application/j
 
 curl http://localhost:8000/metrics/recent
 curl http://localhost:8000/metrics/drift
+curl http://localhost:8000/metrics/summary      # SQL aggregates over every stored prediction
 curl http://localhost:8000/metrics/evaluation   # recorded benchmark + evaluation results behind the web pages
 ```
 
 Web pages (one HTML file, routed in the browser): `/` dashboard, `/predict`, `/recent`, `/drift`, `/performance`, `/quality`. Every number on them comes from the API: live values from `/health` and `/metrics/*`, measured results from `/metrics/evaluation`, which reads the committed files in `benchmarks/results/` and `evaluation/results/`.
 
-Invalid input returns 422 with a consistent shape: `{"error": "validation_error", "message": ..., "details": [...]}`. Unhandled errors return 500 `{"error": "internal_error", ...}` without leaking internals.
+When the server runs with `API_KEY` set, add the key to every prediction and metrics call:
+
+```bash
+curl -X POST http://localhost:8000/predict/churn -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d '{...}'
+```
+
+Invalid input returns 422 with a consistent shape: `{"error": "validation_error", "message": ..., "details": [...]}`. Unhandled errors return 500 `{"error": "internal_error", ...}` without leaking internals. 401, 404 and 429 use the same shape (`unauthorized`, `not_found`, `rate_limited`).
+
+## Security
+
+| Control | How | Default |
+|---|---|---|
+| API-key authentication | `X-API-Key` header on `/predict/churn` and `/metrics/recent`, `/drift`, `/summary`; compared with `hmac.compare_digest` (constant time). Swagger UI shows an **Authorize** button. `/health`, the web pages and `/metrics/evaluation` stay public. | Off unless `API_KEY` is set |
+| Rate limiting | Sliding window per client IP on `/predict/churn`; `429` with `Retry-After`. Checked before the key, so it also slows key guessing. uvicorn trusts the platform proxy's `X-Forwarded-For` (`--forwarded-allow-ips`), so each visitor gets their own budget. | 60 per minute |
+| Input validation | Pydantic: types, ranges, allowed contract values, unknown fields rejected (422) | On |
+| SQL injection | All SQL uses `?` parameters; no user value is pasted into SQL text | On |
+| Content-Security-Policy | Page may load scripts, styles, fonts and API calls only from its own origin; no inline scripts; `frame-ancestors 'none'` | On |
+| Other headers | `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` on every response | On |
+| No internals in errors | 500 returns a generic message; the stack trace goes to the server log only | On |
+| Container | Runs as non-root `appuser` (uid 1000); only `/app/data` is writable | On |
+| Secrets | Read from environment variables; nothing secret is in the repo | — |
+
+On the public demo links `API_KEY` is not set, so visitors can try it without a key. Setting it in the Render dashboard (Environment) switches auth on without a code change; the web page then asks for the key once per tab.
+
+Settings (environment variables):
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `API_KEY` | Required `X-API-Key` value; unset = auth off | unset |
+| `RATE_LIMIT_PER_MINUTE` | Predictions per client IP per minute; `0` = off | `60` |
+| `DB_PATH` | SQLite file for the prediction log | `data/predictions.db` |
+| `FRAME_ANCESTORS` | Who may show the page in a frame (CSP) | `'none'` |
+| `PORT` | Port uvicorn listens on | `8000` |
+
+Limits: the rate-limit counts are per process (fine for one worker; use Redis for several); there are no user accounts, only one shared key.
+
+## Prediction log (SQL)
+
+Every prediction is inserted into a SQLite table `predictions` (inputs, outputs, model version, UTC time; indexed on time). SQLite is part of Python's standard library, so there is no extra service to run. The endpoints read it with SQL:
+
+- `/metrics/recent`: `SELECT ... ORDER BY id DESC LIMIT 10`
+- `/metrics/drift`: the last 1,000 inputs, then PSI
+- `/metrics/summary`: `COUNT`, `AVG`, `SUM(prediction = 'Churn')`, `GROUP BY risk_level`, `GROUP BY contract_type`
+
+The insert runs in the same worker thread as inference, with WAL mode and `synchronous=NORMAL` (no disk flush per commit). Measured locally, back to back against the previous version: p50 7.1–7.7 ms vs 6.5–6.8 ms at concurrency 1, and the same within noise at 10 and 25 (~100 ms p50, ~176 vs ~170 req/s). A first version using `@app.middleware("http")` for the headers and a second thread hop was clearly slower (p50 157 vs 84 ms at concurrency 10), which is why the headers use a plain ASGI middleware.
+
+Locally the log survives restarts. On Render's and Hugging Face's free plans the disk is wiped on every restart or redeploy; durable history would need a managed database (PostgreSQL), which is a change to `app/store.py` only.
 
 ## Tests
 
@@ -130,11 +180,11 @@ Invalid input returns 422 with a consistent shape: `{"error": "validation_error"
 pytest -v
 ```
 
-20 tests: each of the 6 page routes served, `/metrics/evaluation` (all result files present, cut-off matches the API), web page served, health, valid prediction, 422 for negative tenure / bad contract type / missing field, preprocessing determinism, `/metrics/recent`, drift `insufficient_data` then a real status, PSI math, 20 concurrent requests, and the 500 error shape.
+26 tests: SQLite storage and `/metrics/summary` aggregates, API key (401 without/with wrong key, 200 with it, public endpoints stay public), rate limit (429 + `Retry-After`, per-client window), Content-Security-Policy and `nosniff`, 404 error shape, each of the 6 page routes served, `/metrics/evaluation` (all result files present, cut-off matches the API), web page served, health, valid prediction, 422 for negative tenure / bad contract type / missing field, preprocessing determinism, `/metrics/recent`, drift `insufficient_data` then a real status, PSI math, 20 concurrent requests, and the 500 error shape.
 
 ## Latency before / after
 
-`benchmarks/latency_check.py` sends 50 `/predict/churn` requests per concurrency level and polls `/health` during the load. Single uvicorn worker, local Windows machine, Python 3.11. Numbers are copied from `benchmarks/results/*.json`.
+`benchmarks/latency_check.py` sends 50 `/predict/churn` requests per concurrency level and polls `/health` during the load. Single uvicorn worker, local Windows machine, Python 3.11. Numbers are copied from `benchmarks/results/*.json`. Run benchmarks against a server started with `RATE_LIMIT_PER_MINUTE=0`, or the rate limit answers most requests with 429.
 
 - **baseline-naive** (git tag `baseline-naive`): model loaded inside the request handler, inference run directly in the async handler, no warm-up.
 - **optimized** (git tag `optimized`): model loaded once in the lifespan, warm-up at startup, inference offloaded with `run_in_threadpool`, forward pass compiled with `tf.function`.
@@ -170,15 +220,15 @@ PSI = Σ (actual% − expected%) × ln(actual% / expected%)
 
 Under 50 requests it returns `insufficient_data`. The overall status is the worst feature's status.
 
-This is a **basic indicator, not full monitoring**: numeric features only, in-memory window lost on restart, no alerting, no label/accuracy tracking.
+This is a **basic indicator, not full monitoring**: numeric features only, window read from the SQLite log (wiped on redeploy on free hosting), no alerting, no label/accuracy tracking.
 
 ## Design decisions and limitations
 
 - **Synthetic training data.** On an independent public benchmark it ranks well (ROC-AUC ~0.82). The churn cut-off was tuned on that benchmark to 0.71, which favours accuracy over catching every churner; see "Churn cut-off".
-- **No authentication** or rate limiting on any endpoint.
+- **Security is basic but real**: one shared API key (off on the public demo), per-IP rate limiting, CSP; no user accounts. See "Security".
 - **Single worker.** Each extra worker would load its own model copy, multiplying memory. Concurrency comes from the thread pool.
 - **Basic drift only.** See above.
-- **No database.** Recent predictions and the drift window live in memory and reset on restart.
+- **SQLite, not a server database.** Right for one process; on free hosting the file is wiped on redeploy. See "Prediction log (SQL)".
 - **Not deployed on AWS.** Deployed on Render's free plan (Docker web service, 512 MB, sleeps when idle). Live inference latency there was 74.6 ms for one request versus ~5–7 ms locally, because the free instance has a small CPU share.
 - **Pinned dependencies.** `preprocessor.joblib` must be loaded by the same scikit-learn version that saved it.
 - **Memory and size.** The Docker image is 2.54 GB (TensorFlow dominates). `/health` reports memory because Render's free plan hides metrics: container numbers (`memory.cgroup_mb`, `cgroup_peak_mb`), the app's own heap (`rss_anon_mb`), and process memory (`process_mb`, `process_peak_mb`, also on Windows). The page leads with `rss_anon_mb`, because the cgroup total includes file cache the kernel frees under pressure (a fresh Docker run read 510 of 512 MB with 0 OOM kills). On Render: 301.0 MB idle, **304.2 MB peak** after 150 requests at concurrency up to 25, against a 512 MB limit. Process RSS reads ~620 MB, but most of that is TensorFlow's shared libraries mapped from disk, which the limit does not count.

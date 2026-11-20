@@ -1,3 +1,4 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -59,7 +60,9 @@ def test_metrics_evaluation(client):
 
 def test_frontend_served(client):
     r = client.get("/")
-    assert "/predict/churn" in r.text
+    assert '<script src="/static/app.js"></script>' in r.text
+    js = client.get("/static/app.js")
+    assert js.status_code == 200 and "/predict/churn" in js.text
     # Fonts are self-hosted, not fetched from Google.
     assert "fonts.googleapis.com" not in r.text
     font = client.get("/static/fonts/nunito-sans-latin.woff2")
@@ -169,9 +172,79 @@ def test_500_returns_consistent_json(client, monkeypatch):
     def boom(_req):
         raise RuntimeError("secret internal detail")
 
-    # raise_server_exceptions=False so we see the response a real client would get.
-    with TestClient(app, raise_server_exceptions=False) as c:
-        monkeypatch.setattr(c.app.state.pipeline, "predict", boom)
-        r = c.post("/predict/churn", json=VALID)
+    monkeypatch.setattr(client.app.state.pipeline, "predict", boom)
+    # raise_server_exceptions=False so we see the response a real client would get. No `with`:
+    # reuse the session's running app instead of starting (and later closing) a second one.
+    r = TestClient(app, raise_server_exceptions=False).post("/predict/churn", json=VALID)
     assert r.status_code == 500
     assert r.json() == {"error": "internal_error", "message": "Internal server error", "details": None}
+
+
+LOYAL = {"tenure_months": 60, "monthly_charges": 45.0, "total_charges": 2700.0, "support_tickets": 0, "contract_type": "two-year"}
+
+
+def test_predictions_are_stored_in_sqlite(client):
+    assert client.get("/metrics/summary").json()["total"] == 0
+    ids = [client.post("/predict/churn", json=VALID).json()["request_id"] for _ in range(3)]
+    client.post("/predict/churn", json=LOYAL)
+    rows = client.app.state.store._query("SELECT request_id FROM predictions ORDER BY id")
+    assert [r["request_id"] for r in rows][:3] == ids
+    s = client.get("/metrics/summary").json()
+    assert (s["total"], s["churn"], s["churn_rate"]) == (4, 3, 0.75)
+    assert s["by_risk"] == {"High": 3, "Low": 1}
+    assert [(c["contract_type"], c["n"], c["churn_rate"]) for c in s["by_contract"]] == [("month-to-month", 3, 1.0), ("two-year", 1, 0.0)]
+
+
+def test_api_key_required_when_configured(client):
+    client.app.state.api_key = "s3cret"
+    try:
+        assert client.post("/predict/churn", json=VALID).status_code == 401
+        wrong = client.get("/metrics/recent", headers={"X-API-Key": "wrong"})
+        assert wrong.status_code == 401 and wrong.json()["error"] == "unauthorized"
+        for path in ("/metrics/drift", "/metrics/summary"):
+            assert client.get(path).status_code == 401
+        assert client.post("/predict/churn", json=VALID, headers={"X-API-Key": "s3cret"}).status_code == 200
+        # Platform health checks, the page and the published results stay public.
+        for path in ("/health", "/", "/metrics/evaluation"):
+            assert client.get(path).status_code == 200
+    finally:
+        client.app.state.api_key = None
+
+
+def test_rate_limit_returns_429(client):
+    from app.security import RateLimiter
+
+    original, client.app.state.limiter = client.app.state.limiter, RateLimiter(3)
+    try:
+        codes = [client.post("/predict/churn", json=VALID).status_code for _ in range(4)]
+        assert codes == [200, 200, 200, 429]
+        r = client.post("/predict/churn", json=VALID)
+        assert r.json()["error"] == "rate_limited" and int(r.headers["retry-after"]) >= 1
+    finally:
+        client.app.state.limiter = original
+
+
+def test_rate_limiter_window_and_per_client():
+    from app.security import RateLimiter
+
+    limiter = RateLimiter(1, window=0.2)
+    assert limiter.check("a") == 0
+    assert limiter.check("a") >= 1  # second request inside the window is refused
+    assert limiter.check("b") == 0  # other clients have their own budget
+    time.sleep(0.25)
+    assert limiter.check("a") == 0  # window passed
+
+
+def test_security_headers(client):
+    page = client.get("/")
+    csp = page.headers["content-security-policy"]
+    script_src = csp.split("script-src")[1].split(";")[0]
+    assert script_src.strip() == "'self'"  # no inline scripts allowed
+    assert "frame-ancestors 'none'" in csp
+    assert client.get("/health").headers["x-content-type-options"] == "nosniff"
+
+
+def test_http_errors_use_the_same_shape(client):
+    r = client.get("/no-such-page")
+    assert r.status_code == 404
+    assert r.json() == {"error": "not_found", "message": "Not Found", "details": None}

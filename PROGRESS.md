@@ -276,3 +276,26 @@ Tested locally (desktop 1440×900):
 
 Phone (375×812): menu closed at start, opens with all 7 items plus Service health; each page opens from it and the menu closes; Escape closes it; no page scrolls sideways.
 Lighthouse: mobile `/quality` and desktop `/` both 100 in all four categories. 20/20 tests pass. Works: yes.
+
+## Security and SQL gaps closed (for the Tech Mahindra JD)
+
+**Security** (`app/security.py`, wired in `app/main.py`):
+- API-key auth: `X-API-Key` on `/predict/churn`, `/metrics/recent`, `/metrics/drift`, `/metrics/summary`; `hmac.compare_digest`; on only when `API_KEY` is set (decision: off on the public demo links so the interviewer can click straight in; one env var turns it on). `/health`, pages and `/metrics/evaluation` stay public. Swagger shows an Authorize button. The page shows a key box on 401 and keeps the key for the tab.
+- Rate limit: sliding window per client IP on `/predict/churn` (default 60/min, `RATE_LIMIT_PER_MINUTE`), 429 + `Retry-After`, runs before the key check. Dockerfile: `--proxy-headers --forwarded-allow-ips '*'` so visitors behind the platform proxy get separate budgets.
+- Content-Security-Policy on the page (`script-src 'self'`, no inline scripts: script moved to `app/static/app.js`; `frame-ancestors` from `FRAME_ANCESTORS`, default `'none'`), `nosniff` and `Referrer-Policy` on every response.
+- 401/404/429 use the same `{"error","message","details"}` shape as 422/500.
+
+**SQL** (`app/store.py`): every prediction is a row in SQLite (`data/predictions.db`, `DB_PATH`; WAL mode). `/metrics/recent`, the drift window and new `/metrics/summary` (COUNT/AVG/SUM, GROUP BY risk level and contract) are SQL queries; parameterised everywhere. The in-memory deques are gone. Recent page has a new "All stored predictions" card; the dashboard tile shows the stored count. Docker: `/app/data` owned by the non-root user; `data/` excluded from the build context.
+
+**Performance check (found a regression, fixed it):** first version was clearly slower under load. Back-to-back A/B against the previous commit (temporary git worktree, same machine, same minute): old p50 84 ms vs new 157 ms at concurrency 10. `synchronous=NORMAL` alone did not help (not disk flushes). Cause: `@app.middleware("http")` per-request overhead plus a second threadpool hop. Fix: plain ASGI middleware for the headers and one threadpool call for predict + insert. After, two alternating rounds: concurrency 1 p50 old 6.48/6.82 ms vs new 7.71/7.06 ms; concurrency 10 old 38.9/51.3 vs new 50.8/40.8 ms; concurrency 25 old 102/102 vs new 101/100 ms; throughput at 25: old 167–173, new 176–178 req/s. Equal within noise. (`synchronous=NORMAL` kept: no fsync per commit.)
+
+**Tests:** 26 pass (new: SQL storage + summary aggregates, 401 without/wrong key and 200 with it, public endpoints stay public, 429 + Retry-After, per-client window, CSP + nosniff, 404 shape). The 500 test now reuses the running app instead of starting a second lifespan (which would have closed the shared DB).
+
+**Manual checks:**
+- curl on a server with `API_KEY` and limit 5/min: no key 401, wrong key 401, key 200, `/health` 200, summary without key 401, 6th request 429 with `Retry-After: 55`.
+- Browser on that server: key box appears, after the key the summary and table load, Predict shows "Too many predictions… Try again in 34 seconds".
+- Browser on a normal server: every sidebar page, dashboard tiles, presets, 422, borderline, cut-off buttons, drift link, Back all work; summary matched the 3 predictions (High 1 · Medium 1 · Low 1, month-to-month 50% churn); data still there after a server restart.
+- Docker with `-m 512m` and limit 3/min: visitor A (X-Forwarded-For 1.1.1.1) 200 200 200 429, visitor B 200; DB files owned by `appuser`; CSP and nosniff present.
+- Phone 375 px: all 6 pages via the menu, no sideways scroll. Lighthouse `/recent` mobile and desktop: all four categories 100. No console errors.
+
+**Hugging Face Space:** `scripts/deploy_hf_space.py` uploads the 25 files the image needs (no data, tests or secrets) in one commit, sets `FRAME_ANCESTORS=https://huggingface.co` (Spaces shows the app in a frame), README front matter `sdk: docker`, `app_port: 8000`. Not deployed yet: needs the user's `hf auth login`.

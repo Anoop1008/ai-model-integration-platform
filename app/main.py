@@ -3,22 +3,26 @@
 import json
 import logging
 import mimetypes
+import os
 import sys
 import time
-from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.drift import compute_drift
 from app.pipeline import InferencePipeline
 from app.schemas import ChurnRequest, ChurnResponse
+from app.security import RateLimiter, page_csp, rate_limit, require_api_key
+from app.store import PredictionStore
 
 logger = logging.getLogger("churn-api")
 
@@ -26,6 +30,7 @@ RECENT_SIZE = 10
 DRIFT_WINDOW = 1000
 STATIC_DIR = Path(__file__).parent / "static"
 ROOT = Path(__file__).resolve().parent.parent
+HTTP_ERRORS = {401: "unauthorized", 403: "forbidden", 404: "not_found", 405: "method_not_allowed", 429: "rate_limited"}
 PAGES = ("/", "/predict", "/recent", "/drift", "/performance", "/quality")
 RESULT_FILES = {
     "benchmark_baseline": "benchmarks/results/baseline-naive.json",
@@ -45,16 +50,54 @@ async def lifespan(app: FastAPI):
     pipeline.warm_up()
     app.state.pipeline = pipeline
     app.state.started_at = time.time()
-    # In-memory ring buffers: oldest entries fall off automatically. Lost on restart.
-    app.state.recent = deque(maxlen=RECENT_SIZE)
-    app.state.drift_window = deque(maxlen=DRIFT_WINDOW)
+    # Configuration comes from environment variables, so secrets never live in the code or the repo.
+    app.state.store = PredictionStore(os.environ.get("DB_PATH", ROOT / "data" / "predictions.db"))
+    app.state.api_key = os.environ.get("API_KEY") or None  # unset = auth off
+    app.state.limiter = RateLimiter(int(os.environ.get("RATE_LIMIT_PER_MINUTE", "60")))
+    # Who may show the page in a frame: nobody by default; Hugging Face Spaces needs https://huggingface.co.
+    app.state.csp = page_csp(os.environ.get("FRAME_ANCESTORS", "'none'"))
     yield
+    app.state.store.close()
 
 
 app = FastAPI(title="Churn Inference API", version="1.0.0", lifespan=lifespan)
 # Self-hosted fonts: the page makes no third-party requests. Windows and slim images lack a woff2 MIME entry.
 mimetypes.add_type("font/woff2", ".woff2")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+class SecurityHeaders:
+    """Adds headers to every response. Plain ASGI middleware on purpose: @app.middleware("http")
+    wraps every response in extra tasks and measurably slowed predictions under load."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers.setdefault("X-Content-Type-Options", "nosniff")  # browsers must not guess content types
+                headers.setdefault("Referrer-Policy", "no-referrer")
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(SecurityHeaders)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    # Same JSON shape as 422 and 500, so clients handle every error one way.
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": HTTP_ERRORS.get(exc.status_code, "http_error"), "message": str(exc.detail), "details": None},
+        headers=getattr(exc, "headers", None),
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -143,10 +186,10 @@ def memory_mb() -> dict | None:
     }
 
 
-async def frontend():
+async def frontend(request: Request):
     # Single static page served by the API itself: same origin, so no CORS setup.
     # Every page route returns it; the page's script shows the section for the URL.
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Content-Security-Policy": request.app.state.csp})
 
 
 for _page in PAGES:
@@ -182,24 +225,36 @@ async def health(request: Request):
     }
 
 
-@app.post("/predict/churn", response_model=ChurnResponse)
+# Rate limit runs before the key check, so it also slows down anyone guessing keys.
+@app.post("/predict/churn", response_model=ChurnResponse, dependencies=[Depends(rate_limit), Depends(require_api_key)])
 async def predict_churn(req: ChurnRequest, request: Request) -> ChurnResponse:
     pipeline: InferencePipeline = request.app.state.pipeline
     # TF inference is CPU-bound and synchronous. Running it directly in this async
     # handler would block the event loop, stalling every other request (even
     # /health). run_in_threadpool moves it to a worker thread.
-    result = await run_in_threadpool(pipeline.predict, req)
-    request.app.state.recent.append({"input": req.model_dump(), "output": result.model_dump()})
-    request.app.state.drift_window.append(req.model_dump())
+    # The SQLite insert blocks too; doing it in the same worker-thread call saves a second hop.
+    return await run_in_threadpool(_predict_and_log, pipeline, request.app.state.store, req)
+
+
+def _predict_and_log(pipeline: InferencePipeline, store: PredictionStore, req: ChurnRequest) -> ChurnResponse:
+    result = pipeline.predict(req)
+    store.save(req, result)
     return result
 
 
-@app.get("/metrics/recent")
+@app.get("/metrics/recent", dependencies=[Depends(require_api_key)])
 async def metrics_recent(request: Request):
-    recent = list(request.app.state.recent)
+    recent = await run_in_threadpool(request.app.state.store.recent, RECENT_SIZE)
     return {"count": len(recent), "predictions": recent}
 
 
-@app.get("/metrics/drift")
+@app.get("/metrics/drift", dependencies=[Depends(require_api_key)])
 async def metrics_drift(request: Request):
-    return compute_drift(list(request.app.state.drift_window), request.app.state.pipeline.training_stats)
+    rows = await run_in_threadpool(request.app.state.store.recent_inputs, DRIFT_WINDOW)
+    return compute_drift(rows, request.app.state.pipeline.training_stats)
+
+
+@app.get("/metrics/summary", dependencies=[Depends(require_api_key)])
+async def metrics_summary(request: Request):
+    """SQL aggregates over every stored prediction: totals, churn rate, by risk level and by contract."""
+    return await run_in_threadpool(request.app.state.store.summary)

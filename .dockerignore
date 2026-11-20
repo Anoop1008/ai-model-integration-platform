@@ -8,3 +8,4 @@ benchmarks/*.py
 .env
 *.md
 !README.md
+data/

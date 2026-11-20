@@ -1,7 +1,17 @@
-import pytest
-from fastapi.testclient import TestClient
+import os
+import tempfile
+from pathlib import Path
 
-from app.main import app
+# Before the app is imported: tests use a throwaway database and no rate limit
+# (several tests send 50+ requests in a second; the limiter has its own test).
+os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
+os.environ["RATE_LIMIT_PER_MINUTE"] = "0"
+os.environ.pop("API_KEY", None)
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import app  # noqa: E402
 
 VALID = {
     "tenure_months": 5,
@@ -20,6 +30,6 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def reset_buffers(client):
-    client.app.state.recent.clear()
-    client.app.state.drift_window.clear()
+def reset_state(client):
+    client.app.state.store.clear()
+    client.app.state.limiter.reset()
