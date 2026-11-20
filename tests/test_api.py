@@ -28,7 +28,7 @@ def test_health(client):
     body = r.json()
     assert body["status"] == "ok"
     assert body["model_loaded"] is True
-    assert body["model_version"] == "churn-tf-v1"
+    assert body["model_version"] == "churn-tf-v1.1"
     assert body["uptime_seconds"] >= 0
     # Linux only; None on Windows dev machines. Validated in Docker.
     mem = body["memory"]
@@ -49,11 +49,25 @@ def test_valid_prediction(client):
     assert set(body) == RESPONSE_FIELDS
     assert body["prediction"] in {"Churn", "Retain"}
     assert 0 <= body["churn_probability"] <= 1
-    assert 0.5 <= body["confidence_score"] <= 1
     assert body["risk_level"] in {"Low", "Medium", "High"}
     assert body["inference_latency_ms"] > 0
-    # Prediction must agree with the probability.
-    assert (body["prediction"] == "Churn") == (body["churn_probability"] >= 0.5)
+    # Prediction must agree with the probability and the calibrated cut-off.
+    threshold = client.app.state.pipeline.threshold
+    assert threshold == 0.71
+    churn = body["prediction"] == "Churn"
+    assert churn == (body["churn_probability"] >= threshold)
+    # Confidence is the probability of the predicted class.
+    expected = body["churn_probability"] if churn else 1 - body["churn_probability"]
+    assert abs(body["confidence_score"] - expected) < 1e-3
+
+
+def test_threshold_between_05_and_cutoff(client):
+    # A customer scoring between 0.5 and 0.71 was "Churn" before calibration and is "Retain" now.
+    pipeline = client.app.state.pipeline
+    r = pipeline.postprocess(0.6, latency_ms=1.0)
+    assert (r.prediction, r.risk_level, r.confidence_score) == ("Retain", "Medium", 0.4)
+    high = pipeline.postprocess(0.71, latency_ms=1.0)
+    assert (high.prediction, high.risk_level) == ("Churn", "High")
 
 
 @pytest.mark.parametrize(

@@ -64,12 +64,25 @@ A TensorFlow churn classifier served by a modular FastAPI inference pipeline.
 | Model | Accuracy | ROC-AUC | Churn precision | Churn recall |
 |---|---|---|---|---|
 | Always predict "stay" | 0.7346 | – | – | – |
-| Deployed model, tickets = 0 | 0.7677 | 0.8184 | 0.5561 | 0.6174 |
-| Deployed model, tickets = 1 | 0.7548 | 0.8190 | 0.5291 | 0.6913 |
-| Deployed model, tickets = 2 | 0.7267 | 0.8228 | 0.4908 | 0.8026 |
+| Model at 0.5 cut-off, tickets = 0 | 0.7677 | 0.8184 | 0.5561 | 0.6174 |
+| Model at 0.5 cut-off, tickets = 1 | 0.7548 | 0.8190 | 0.5291 | 0.6913 |
+| Model at 0.5 cut-off, tickets = 2 | 0.7267 | 0.8228 | 0.4908 | 0.8026 |
 | Logistic regression trained on this data (5-fold CV, same 4 fields) | 0.7866 | 0.8279 | 0.6260 | 0.4864 |
 
 What it shows: the model **ranks** customers almost as well as one trained on this data (ROC-AUC 0.82 vs 0.83), so the churn patterns built into the synthetic data are realistic. Its **0.5 cut-off is less well matched**: it flags more churners than really leave (predicted 29–43% vs actual 26.5%), and the guessed ticket count moves accuracy from 0.77 to 0.73. Retraining or recalibrating on real data would fix that. Our own PSI check flags this data as shifted from training (monthly charges PSI 0.3773, significant), which is the drift indicator working as intended.
+
+### Churn cut-off (model version `churn-tf-v1.1`)
+
+The 0.5 cut-off flagged too many customers, so `evaluation/calibrate_threshold.py` tunes it: the IBM data is split 50/50 (stratified), the cut-off that maximises accuracy is picked on one half (**0.71**), and results are reported on the other, untouched half (3,522 customers, 26.5% churn). From `evaluation/results/threshold_calibration.json`:
+
+| Cut-off | Accuracy | Churn precision | Churn recall | Flagged as churn |
+|---|---|---|---|---|
+| 0.5 (before) | 0.7521 | 0.5248 | 0.7016 | 35.5% |
+| **0.71 (deployed)** | **0.7868** | **0.6620** | **0.4021** | **16.1%** |
+
+Trade-off, chosen deliberately: flagged customers are now right 66% of the time instead of 52%, but only 40% of real churners are caught instead of 70%. That suits expensive retention offers. If missing a churner is costlier, rerun with a lower cut-off (maximising F1 picked 0.46). The cut-off is stored in `artifacts/training_stats.json` as `decision_threshold`; rerun the script after `train.py`. `support_tickets` was filled with 1 for this, since the IBM data lacks it.
+
+Response fields follow the cut-off: `prediction` is `Churn` when probability ≥ 0.71, `confidence_score` is the probability of the predicted class, and `risk_level` is Low < 0.3, Medium < 0.71, High ≥ 0.71 (so High always means Churn).
 
 ## Run locally
 
@@ -100,7 +113,7 @@ curl http://localhost:8000/health
 curl -X POST http://localhost:8000/predict/churn -H "Content-Type: application/json" \
   -d '{"tenure_months":5,"monthly_charges":95.5,"total_charges":477.5,"support_tickets":4,"contract_type":"month-to-month"}'
 # {"request_id":"...","prediction":"Churn","confidence_score":0.8624,"churn_probability":0.8624,
-#  "risk_level":"High","inference_latency_ms":6.569,"model_version":"churn-tf-v1"}
+#  "risk_level":"High","inference_latency_ms":6.569,"model_version":"churn-tf-v1.1"}
 
 curl http://localhost:8000/metrics/recent
 curl http://localhost:8000/metrics/drift
@@ -158,7 +171,7 @@ This is a **basic indicator, not full monitoring**: numeric features only, in-me
 
 ## Design decisions and limitations
 
-- **Synthetic training data.** On an independent public benchmark it ranks well (ROC-AUC ~0.82) but its 0.5 threshold over-predicts churn; see "Quality on independent data".
+- **Synthetic training data.** On an independent public benchmark it ranks well (ROC-AUC ~0.82). The churn cut-off was tuned on that benchmark to 0.71, which favours accuracy over catching every churner; see "Churn cut-off".
 - **No authentication** or rate limiting on any endpoint.
 - **Single worker.** Each extra worker would load its own model copy, multiplying memory. Concurrency comes from the thread pool.
 - **Basic drift only.** See above.

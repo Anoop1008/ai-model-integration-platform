@@ -1,0 +1,21 @@
+{
+  "chosen_threshold": 0.71,
+  "objective": "max accuracy on tune half",
+  "support_tickets_fill": 1,
+  "holdout_rows": 3522,
+  "holdout_actual_churn_rate": 0.2655,
+  "holdout_at_0.5": {
+    "accuracy": 0.7521,
+    "roc_auc": 0.8161,
+    "precision_churn": 0.5248,
+    "recall_churn": 0.7016,
+    "predicted_churn_rate": 0.3549
+  },
+  "holdout_at_0.71": {
+    "accuracy": 0.7868,
+    "roc_auc": 0.8161,
+    "precision_churn": 0.662,
+    "recall_churn": 0.4021,
+    "predicted_churn_rate": 0.1613
+  }
+}

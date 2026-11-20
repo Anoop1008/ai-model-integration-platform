@@ -20,10 +20,11 @@ ARTIFACTS_DIR = Path(__file__).resolve().parent.parent / "artifacts"
 FEATURES = ["tenure_months", "monthly_charges", "total_charges", "support_tickets", "contract_type"]
 
 
-def risk_level(p: float) -> str:
+def risk_level(p: float, threshold: float) -> str:
+    # High lines up with the churn cut-off, so "High risk" always means a Churn prediction.
     if p < 0.3:
         return "Low"
-    if p < 0.6:
+    if p < threshold:
         return "Medium"
     return "High"
 
@@ -34,6 +35,8 @@ class InferencePipeline:
         self.preprocessor = preprocessor
         self.training_stats = training_stats
         self.model_version = training_stats["model_version"]
+        # Tuned on independent data by evaluation/calibrate_threshold.py; 0.5 if never calibrated.
+        self.threshold = training_stats.get("decision_threshold", 0.5)
         # Compile the forward pass into a TF graph once. Eager Keras calls spend most of
         # their time in Python (holding the GIL); the graph call measured ~6x faster here.
         n_features = len(preprocessor.get_feature_names_out())
@@ -64,12 +67,14 @@ class InferencePipeline:
         return float(self._forward(x).numpy()[0, 0])
 
     def postprocess(self, prob: float, latency_ms: float) -> ChurnResponse:
+        churn = prob >= self.threshold
         return ChurnResponse(
             request_id=uuid.uuid4().hex,
-            prediction="Churn" if prob >= 0.5 else "Retain",
-            confidence_score=round(max(prob, 1 - prob), 4),
+            prediction="Churn" if churn else "Retain",
+            # Probability of the predicted class. Can be below 0.5 when the cut-off isn't 0.5.
+            confidence_score=round(prob if churn else 1 - prob, 4),
             churn_probability=round(prob, 4),
-            risk_level=risk_level(prob),
+            risk_level=risk_level(prob, self.threshold),
             inference_latency_ms=round(latency_ms, 3),
             model_version=self.model_version,
         )

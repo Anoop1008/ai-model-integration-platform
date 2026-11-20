@@ -64,8 +64,8 @@ def load_real() -> tuple[pd.DataFrame, np.ndarray]:
     return df, (raw["Churn"] == "Yes").astype(int).to_numpy()
 
 
-def scores(y: np.ndarray, proba: np.ndarray) -> dict:
-    pred = proba >= 0.5
+def scores(y: np.ndarray, proba: np.ndarray, threshold: float = 0.5) -> dict:
+    pred = proba >= threshold
     return {
         "accuracy": round(accuracy_score(y, pred), 4),
         "roc_auc": round(roc_auc_score(y, proba), 4),

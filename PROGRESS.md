@@ -184,3 +184,13 @@ Memory caveat found here: the first run of a freshly built image reported `cgrou
 600 requests, 0 errors, no restart; memory peak 314.2 MB of 512 MB. Throughput is flat at ~24 req/s: the 0.15 CPU is the limit, so more concurrency only adds queueing time. `/health` p50 stayed ~430 ms (≈290 ms of that is network), so the event loop stayed responsive.
 
 **Model quality on independent data.** `evaluation/evaluate_real.py` on IBM Telco Customer Churn (7,043 rows; IBM calls it a fictional telco, so realistic sample data, not verified real customers). `support_tickets` is missing there and filled with 0/1/2. Deployed model: ROC-AUC 0.8184–0.8228, accuracy 0.7267–0.7677. Majority-class accuracy 0.7346. Logistic regression trained on that data (5-fold CV): ROC-AUC 0.8279, accuracy 0.7866. Conclusion: ranking transfers well; the 0.5 threshold over-predicts churn (29–43% predicted vs 26.5% actual). PSI flags the data as shifted (monthly charges 0.3773). Full table in README.
+
+---
+
+## Churn cut-off tuned (model version `churn-tf-v1.1`) ✅
+
+- `evaluation/calibrate_threshold.py`: split IBM Telco 50/50 (stratified, seed 42), pick the cut-off on the tune half, report on the holdout half (3,522 rows). Writes `decision_threshold` and `model_version` into `artifacts/training_stats.json`.
+- Compared objectives on the same split: max accuracy → 0.71; max F1 → 0.46. User chose **0.71**.
+- Holdout: accuracy 0.7521 → **0.7868**, precision 0.5248 → **0.6620**, recall 0.7016 → **0.4021**, flagged 35.5% → **16.1%** (actual 26.5%). ROC-AUC unchanged (0.8161).
+- `app/pipeline.py`: reads the cut-off (default 0.5). `confidence_score` is now the probability of the predicted class (was `max(p, 1-p)`, wrong once the cut-off isn't 0.5). High risk now starts at the cut-off, so High always means Churn.
+- Tests: updated version and confidence checks; new `test_threshold_between_05_and_cutoff` (0.6 → Retain/Medium/0.4, 0.71 → Churn/High). `pytest`: **13 passed**.

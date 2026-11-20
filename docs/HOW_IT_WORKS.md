@@ -15,7 +15,7 @@ When someone presses **Predict churn** on the web page:
 3. **Thread pool hand-off** (`app/main.py`): the handler passes the work to a worker thread with `run_in_threadpool`, so the server can keep answering other requests.
 4. **Preprocess** (`app/pipeline.py`): the same fitted scikit-learn `ColumnTransformer` used in training scales the numbers and one-hot encodes the contract type. Output: 7 numbers.
 5. **Infer**: the TensorFlow model turns those 7 numbers into a churn probability between 0 and 1.
-6. **Postprocess**: probability becomes a readable answer: `Churn`/`Retain`, a confidence score, a risk level (Low under 0.3, Medium under 0.6, High otherwise), latency, and model version.
+6. **Postprocess**: probability becomes a readable answer: `Churn`/`Retain`, a confidence score, a risk level (Low under 0.3, Medium under 0.71, High otherwise; 0.71 is also the churn cut-off), latency, and model version.
 7. **Bookkeeping**: the request is added to two in-memory lists, one for "last 10 predictions" and one for drift.
 8. **Response**: JSON goes back; the page shows it.
 
@@ -87,13 +87,15 @@ A model is only right for data that looks like its training data. **PSI (Populat
 
 | Question | Answer |
 |---|---|
-| How accurate is it? | 0.7825 accuracy, 0.8554 ROC-AUC on its synthetic test set. On the independent IBM Telco benchmark (7,043 customers): ROC-AUC 0.82 vs 0.83 for a model trained on that data, accuracy 0.73–0.77 depending on the guessed ticket count. Ranks well; the 0.5 threshold over-predicts churn. |
+| How accurate is it? | 0.7825 accuracy, 0.8554 ROC-AUC on its synthetic test set. On the independent IBM Telco benchmark (7,043 customers): ROC-AUC 0.82 vs 0.83 for a model trained on that data, accuracy 0.73–0.77 depending on the guessed ticket count. Ranks well. The cut-off was then tuned to 0.71 on half that data; on the other half accuracy rose 0.752 → 0.787. |
 | What's ROC-AUC? | Chance the model ranks a random churner above a random non-churner. 0.5 = guessing, 1.0 = perfect. |
 | What happens with bad input? | 422 with a consistent JSON body listing each problem; the model is never called. |
 | What if the model crashes mid-request? | 500 with a generic JSON message; details go to server logs, not the client. |
 | How do you know it works? | 12 pytest tests, including 20 concurrent requests and drift going from `insufficient_data` to `significant`. |
 | What would you add for real production? | Authentication, rate limiting, a database for predictions, persistent monitoring with alerts, real data, model versioning/rollback, CI. |
 | Why test on another dataset? | A test split from the same generator only shows the model learned the generator. Independent data shows whether the patterns transfer. |
+| Why 0.71 and not 0.5? | 0.5 flagged 35% of customers when 26.5% churn. 0.71 maximised accuracy on held-out tuning data: flagged customers are right 66% of the time, but only 40% of churners are caught. A business choice: suits costly retention offers. |
+| Why tune on one half and report on the other? | Picking a value and grading it on the same rows overstates how good it is. |
 | Biggest limitation? | Synthetic data; in-memory state lost on restart; ~200 MB memory headroom on the free plan. |
 
 ## Try it yourself
