@@ -1,0 +1,94 @@
+"""FastAPI app: validation -> preprocessing -> TF inference -> JSON response."""
+
+import logging
+import time
+from collections import deque
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from app.drift import compute_drift
+from app.pipeline import InferencePipeline
+from app.schemas import ChurnRequest, ChurnResponse
+
+logger = logging.getLogger("churn-api")
+
+RECENT_SIZE = 10
+DRIFT_WINDOW = 1000
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load the model ONCE per process. Loading per request would add seconds of
+    # latency to every call and repeatedly allocate memory.
+    pipeline = InferencePipeline.load()
+    pipeline.warm_up()
+    app.state.pipeline = pipeline
+    app.state.started_at = time.time()
+    # In-memory ring buffers: oldest entries fall off automatically. Lost on restart.
+    app.state.recent = deque(maxlen=RECENT_SIZE)
+    app.state.drift_window = deque(maxlen=DRIFT_WINDOW)
+    yield
+
+
+app = FastAPI(title="Churn Inference API", version="1.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "validation_error",
+            "message": "Request body failed validation",
+            "details": jsonable_encoder(exc.errors()),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s", request.url.path)
+    # Do not leak internals (stack traces, paths) to clients.
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal_error", "message": "Internal server error", "details": None},
+    )
+
+
+@app.get("/health")
+async def health(request: Request):
+    pipeline = getattr(request.app.state, "pipeline", None)
+    return {
+        "status": "ok" if pipeline else "starting",
+        "model_loaded": pipeline is not None,
+        "model_version": pipeline.model_version if pipeline else None,
+        "uptime_seconds": round(time.time() - request.app.state.started_at, 2),
+    }
+
+
+@app.post("/predict/churn", response_model=ChurnResponse)
+async def predict_churn(req: ChurnRequest, request: Request) -> ChurnResponse:
+    pipeline: InferencePipeline = request.app.state.pipeline
+    # TF inference is CPU-bound and synchronous. Running it directly in this async
+    # handler would block the event loop, stalling every other request (even
+    # /health). run_in_threadpool moves it to a worker thread.
+    result = await run_in_threadpool(pipeline.predict, req)
+    request.app.state.recent.append({"input": req.model_dump(), "output": result.model_dump()})
+    request.app.state.drift_window.append(req.model_dump())
+    return result
+
+
+@app.get("/metrics/recent")
+async def metrics_recent(request: Request):
+    recent = list(request.app.state.recent)
+    return {"count": len(recent), "predictions": recent}
+
+
+@app.get("/metrics/drift")
+async def metrics_drift(request: Request):
+    return compute_drift(list(request.app.state.drift_window), request.app.state.pipeline.training_stats)
