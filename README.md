@@ -146,4 +146,4 @@ This is a **basic indicator, not full monitoring**: numeric features only, in-me
 - **No database.** Recent predictions and the drift window live in memory and reset on restart.
 - **Not deployed on AWS.** Target is Render (Docker web service).
 - **Pinned dependencies.** `preprocessor.joblib` must be loaded by the same scikit-learn version that saved it.
-- **Memory.** The local (Windows, non-container) server used 367 MB working set after startup + one request. Render's free instance has 512 MB.
+- **Memory and size.** The Docker image is 2.54 GB (TensorFlow dominates). The container used 295.3 MiB at idle (`docker stats`), under Render's free 512 MB limit but with only ~200 MB headroom.

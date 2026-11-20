@@ -4,14 +4,14 @@ Phase-by-phase log of what was built and whether it was verified. Every number b
 
 | Phase | Status |
 |---|---|
-| 0. Environment check | Partial: Docker missing (user action needed) |
+| 0. Environment check | ✅ Done (WSL repaired, Docker running; gh login still pending) |
 | 1. Scaffold, data, training | ✅ Verified |
 | 2. API | ✅ Verified |
 | 3. Tests | ✅ Verified (11/11 pass) |
 | 4. Latency before/after | ✅ Verified |
-| 5. Docker | ⏸ Files written, NOT verified (Docker not installed) |
+| 5. Docker | ✅ Verified |
 | 6. Git and Render | 🟡 Local git done; GitHub push and Render not started (needs approval) |
-| 7. README and summary | 🟡 README written; Docker and Render sections need real numbers |
+| 7. README and summary | 🟡 README written; live URL pending |
 
 ---
 
@@ -21,13 +21,14 @@ Phase-by-phase log of what was built and whether it was verified. Every number b
 |---|---|
 | Python 3.11 | Not installed (system had 3.13.15 only). Installed **Python 3.11.17** with `uv python install 3.11`. Project venv: `.venv` |
 | git | `git version 2.55.0.windows.5` |
-| Docker | **Not installed** (`docker: command not found`) |
+| Docker | User installed Docker Desktop (per-user, `%LOCALAPPDATA%\Programs\DockerDesktop`). Client/server **29.9.3**. |
+| WSL | Was broken (`Wsl/CallMsi/Install/REGDB_E_CLASSNOTREG`). Reinstalled `Microsoft.WSL` elevated via winget. Now WSL **3.0.5.0**, kernel 6.18.58.1-1, default version 2. |
 | GitHub CLI | Not installed. Installed with `winget install GitHub.cli`. Not logged in yet. |
 
 Git had no identity configured. Set repo-local `user.name=shukl`, `user.email=<account email>`. Change with `git config user.name "..."` if wanted.
 
 **User actions needed:**
-- [ ] Install Docker Desktop (needs admin + WSL2) and start it.
+- [x] Install Docker Desktop and WSL2.
 - [ ] Run `gh auth login` (open a new terminal first so `gh` is on PATH).
 - [ ] Create a Render account and connect it to GitHub.
 
@@ -85,16 +86,26 @@ Finding during this phase: the first optimized run (eager Keras calls) regressed
 | 10 | 443.19 → 6.57 ms | 1174.69 → 16.67 ms | 21.90 → 144.40 |
 | 25 | 1098.01 → 84.77 ms | 1226.93 → 67.71 ms | 20.10 → 183.37 |
 
-## Phase 5: Docker ⏸ NOT VERIFIED
+## Phase 5: Docker ✅
 
-Written: `Dockerfile` (python:3.11-slim, tensorflow-cpu, `--no-cache-dir`, non-root user, HEALTHCHECK on /health, `$PORT` default 8000, `TF_CPP_MIN_LOG_LEVEL=2`), `render.yaml`.
+Files: `Dockerfile` (python:3.11-slim, tensorflow-cpu, `--no-cache-dir`, non-root user, HEALTHCHECK on /health, `$PORT` default 8000, `TF_CPP_MIN_LOG_LEVEL=2`), `render.yaml`.
 
-Not built or run: Docker is not installed. Image size and container idle memory unknown.
+Verified with `docker build -t churn-api .` and `docker run -p 8000:8000 churn-api`:
+```
+/health        -> {"status":"ok","model_loaded":true,"model_version":"churn-tf-v1","uptime_seconds":0.77}
+/predict/churn -> {"prediction":"Churn","confidence_score":0.8624,...,"inference_latency_ms":5.057,...}
+invalid body   -> HTTP 422
+docker exec churn id -> uid=1000(appuser)        (non-root)
+HEALTHCHECK    -> health=healthy
+PORT=10000     -> /health on :10000 returned 200 (Render-style $PORT honored)
+```
 
-⚠️ Memory warning: the local Windows server process used **367 MB** working set after startup and one request. This is above ~350 MB. Render's free instance (512 MB) may run out of memory. Container memory still needs measuring. Options if it is too high:
-1. Convert the model to TFLite and serve with `tflite-runtime` / `ai-edge-litert` (drops full TensorFlow).
-2. Use a paid Render instance with more RAM.
-3. Swap the classifier to scikit-learn (smaller runtime), at the cost of the TensorFlow requirement.
+| Measure | Value |
+|---|---|
+| Image size | 2.54 GB (`docker image ls`) |
+| Idle container memory | 295.3 MiB (`docker stats`, after startup + 2 requests) |
+
+Idle memory is under ~350 MB, so Render's free 512 MB instance should fit. Headroom is about 200 MB, so it should be watched under load. The earlier 367 MB Windows figure was the native process, not the container.
 
 ## Phase 6: Git and Render 🟡
 
