@@ -216,8 +216,9 @@ def test_rate_limit_returns_429(client):
 
     original, client.app.state.limiter = client.app.state.limiter, RateLimiter(3)
     try:
-        codes = [client.post("/predict/churn", json=VALID).status_code for _ in range(4)]
-        assert codes == [200, 200, 200, 429]
+        responses = [client.post("/predict/churn", json=VALID) for _ in range(4)]
+        assert [r.status_code for r in responses] == [200, 200, 200, 429]
+        assert [r.headers["x-ratelimit-remaining"] for r in responses] == ["2", "1", "0", "0"]
         r = client.post("/predict/churn", json=VALID)
         assert r.json()["error"] == "rate_limited" and int(r.headers["retry-after"]) >= 1
     finally:
@@ -252,11 +253,11 @@ def test_rate_limiter_window_and_per_client():
     from app.security import RateLimiter
 
     limiter = RateLimiter(1, window=0.2)
-    assert limiter.check("a") == 0
-    assert limiter.check("a") >= 1  # second request inside the window is refused
-    assert limiter.check("b") == 0  # other clients have their own budget
+    assert limiter.check("a") == (0, 0)
+    assert limiter.check("a")[0] >= 1  # second request inside the window is refused
+    assert limiter.check("b") == (0, 0)  # other clients have their own budget
     time.sleep(0.25)
-    assert limiter.check("a") == 0  # window passed
+    assert limiter.check("a") == (0, 0)  # window passed
 
 
 def test_security_headers(client):

@@ -6,7 +6,7 @@ import threading
 import time
 from collections import defaultdict, deque
 
-from fastapi import HTTPException, Request, Security
+from fastapi import HTTPException, Request, Response, Security
 from fastapi.security import APIKeyHeader
 
 # auto_error=False: the dependency decides, so auth can be switched off when no key is configured.
@@ -35,22 +35,23 @@ class RateLimiter:
         self._hits: dict[str, deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def check(self, client: str) -> int:
-        """0 if the request may go ahead, else the seconds to wait before retrying."""
+    def check(self, client: str) -> tuple[int, int]:
+        """(retry_after, remaining): retry_after is 0 if the request may go ahead, else the
+        seconds to wait; remaining is how many more requests fit in the current window."""
         if self.limit <= 0:
-            return 0
+            return 0, -1
         now = time.monotonic()
         with self._lock:
             hits = self._hits[client]
             while hits and hits[0] <= now - self.window:
                 hits.popleft()
             if len(hits) >= self.limit:
-                return max(1, math.ceil(hits[0] + self.window - now))
+                return max(1, math.ceil(hits[0] + self.window - now)), 0
             hits.append(now)
             if len(self._hits) > 10_000:  # forget idle clients so the dict cannot grow without bound
                 for k in [k for k, q in self._hits.items() if not q or q[-1] <= now - self.window]:
                     del self._hits[k]
-            return 0
+            return 0, self.limit - len(hits)
 
     def reset(self) -> None:
         with self._lock:
@@ -68,10 +69,15 @@ def client_ip(request: Request) -> str:
     return value or (request.client.host if request.client else "unknown")
 
 
-def rate_limit(request: Request) -> None:
-    retry_after = request.app.state.limiter.check(client_ip(request))
+def rate_limit(request: Request, response: Response) -> None:
+    limiter = request.app.state.limiter
+    retry_after, remaining = limiter.check(client_ip(request))
     if retry_after:
-        raise HTTPException(status_code=429, detail=f"Rate limit exceeded; retry in {retry_after} s", headers={"Retry-After": str(retry_after)})
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded; retry in {retry_after} s",
+                            headers={"Retry-After": str(retry_after), "X-RateLimit-Limit": str(limiter.limit), "X-RateLimit-Remaining": "0"})
+    if limiter.limit > 0:  # standard headers: clients can see their budget before they hit 429
+        response.headers["X-RateLimit-Limit"] = str(limiter.limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
 
 
 def page_csp(frame_ancestors: str) -> str:
