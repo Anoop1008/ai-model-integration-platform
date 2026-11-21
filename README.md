@@ -139,7 +139,7 @@ Invalid input returns 422 with a consistent shape: `{"error": "validation_error"
 | Control | How | Default |
 |---|---|---|
 | API-key authentication | `X-API-Key` header on `/predict/churn` and `/metrics/recent`, `/drift`, `/summary`; compared with `hmac.compare_digest` (constant time). Swagger UI shows an **Authorize** button. `/health`, the web pages and `/metrics/evaluation` stay public. | Off unless `API_KEY` is set |
-| Rate limiting | Sliding window per client IP on `/predict/churn`; `429` with `Retry-After`. Checked before the key, so it also slows key guessing. The visitor IP comes from `CLIENT_IP_HEADER` (on Render `cf-connecting-ip`, which Cloudflare overwrites so clients can't fake it), else the TCP peer. `X-Forwarded-For` is never trusted: an earlier version did, and a burst with a faked header bypassed the limit live. | 60 per minute |
+| Rate limiting | Sliding window per client IP on `/predict/churn`; `429` with `Retry-After`; every prediction carries `X-RateLimit-Limit` / `X-RateLimit-Remaining`; `/health` shows the active settings. Checked before the key, so it also slows key guessing. The visitor IP comes from `CLIENT_IP_HEADER` (on Render `cf-connecting-ip`, which Cloudflare overwrites so clients can't fake it), else the TCP peer. `X-Forwarded-For` is never trusted: an earlier version did, and a burst with a faked header bypassed the limit live. | 60 per minute |
 | Input validation | Pydantic: types, ranges, allowed contract values, unknown fields rejected (422) | On |
 | SQL injection | All SQL uses `?` parameters; no user value is pasted into SQL text | On |
 | Content-Security-Policy | Page may load scripts, styles, fonts and API calls only from its own origin; no inline scripts; `frame-ancestors 'none'` | On |

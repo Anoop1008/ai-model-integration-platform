@@ -228,17 +228,6 @@ async def health(request: Request):
     }
 
 
-@app.get("/debug/client-ip", include_in_schema=False)
-async def debug_client_ip(request: Request):
-    # TEMPORARY: shows the caller only their own forwarding headers, to see what Render passes
-    # to the app. Remove once the rate-limit key is confirmed.
-    from app.security import client_ip
-
-    names = ("x-forwarded-for", "cf-connecting-ip", "true-client-ip", "x-real-ip", "forwarded", "cf-ray")
-    return {"key_used": client_ip(request), "peer": request.client.host if request.client else None,
-            "headers": {n: request.headers.get(n) for n in names}}
-
-
 # Rate limit runs before the key check, so it also slows down anyone guessing keys.
 @app.post("/predict/churn", response_model=ChurnResponse, dependencies=[Depends(rate_limit), Depends(require_api_key)])
 async def predict_churn(req: ChurnRequest, request: Request) -> ChurnResponse:

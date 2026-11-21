@@ -269,6 +269,11 @@ def test_security_headers(client):
     assert client.get("/health").headers["x-content-type-options"] == "nosniff"
 
 
+def test_debug_endpoint_is_gone(client):
+    # The temporary /debug/client-ip used to diagnose Render's headers must not ship.
+    assert client.get("/debug/client-ip").status_code == 404
+
+
 def test_http_errors_use_the_same_shape(client):
     r = client.get("/no-such-page")
     assert r.status_code == 404
